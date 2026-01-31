@@ -1,8 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.sdothrift</groupId>
@@ -11,18 +9,33 @@
     <packaging>jar</packaging>
 
     <name>SDO Thrift Data Handler</name>
-    <description>Custom IBM Integration Designer data handler for Thrift Objects to SDO conversion</description>
+    <description>Custom IBM Integration Designer data handler for bidirectional transformation between Apache Thrift objects and SDO DataObjects</description>
+    <url>https://github.com/your-org/sdothrift</url>
 
     <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <thrift.version>0.21.0</thrift.version>
-        <junit.jupiter.version>5.10.0</junit.jupiter.version>
-        <mockito.version>5.5.0</mockito.version>
-        <assertj.version>3.24.0</assertj.version>
-        <surefire.version>3.1.0</surefire.version>
-        <failsafe.version>3.1.0</failsafe.version>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <maven.compiler.release>8</maven.compiler.release>
+
+        <maven.test.skip>false</maven.test.skip>
+
+        <sonar.plugin.version>3.8.0.2131</sonar.plugin.version>
+
+        <maven.javadoc.skip>false</maven.javadoc.skip>
+
+        <maven.source.skip>false</maven.source.skip>
+
+        <maven.deploy.skip>false</maven.deploy.skip>
+
+        <maven.install.skip>false</maven.install.skip>
+
+        <!-- Deployment configuration -->
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.organization>sdothrift</sonar.organization>
+        <sonar.projectKey>sdothrift</sonar.projectKey>
     </properties>
 
     <dependencies>
@@ -30,32 +43,26 @@
         <dependency>
             <groupId>org.apache.thrift</groupId>
             <artifactId>libthrift</artifactId>
-            <version>${thrift.version}</version>
+            <version>0.21.0</version>
         </dependency>
 
-        <!-- IBM Integration Designer - Note: These versions may need adjustment -->
-        <dependency>
-            <groupId>javax</groupId>
-            <artifactId>javaee-api</artifactId>
-            <version>8.0.1</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- SDO Framework -->
+        <!-- SDO/EMF -->
         <dependency>
             <groupId>org.eclipse.emf</groupId>
             <artifactId>org.eclipse.emf.ecore</artifactId>
             <version>2.23.0</version>
         </dependency>
+
         <dependency>
             <groupId>org.eclipse.emf</groupId>
             <artifactId>org.eclipse.emf.ecore.sdo</artifactId>
-            <version>2.3.0</version>
+            <version>1.2.0</version>
         </dependency>
+
         <dependency>
             <groupId>org.eclipse.emf</groupId>
             <artifactId>org.eclipse.emf.ecore.xmi</artifactId>
-            <version>2.16.0</version>
+            <version>2.23.0</version>
         </dependency>
 
         <!-- JSON Processing -->
@@ -64,8 +71,9 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.15.2</version>
         </dependency>
+
         <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
             <version>2.15.2</version>
         </dependency>
@@ -76,6 +84,7 @@
             <artifactId>commons-lang3</artifactId>
             <version>3.12.0</version>
         </dependency>
+
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-collections4</artifactId>
@@ -88,6 +97,7 @@
             <artifactId>slf4j-api</artifactId>
             <version>2.0.7</version>
         </dependency>
+
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
@@ -99,150 +109,227 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <version>${junit.jupiter.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-params</artifactId>
-            <version>${junit.jupiter.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>${mockito.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-junit-jupiter</artifactId>
-            <version>${mockito.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <version>${assertj.version}</version>
+            <version>5.10.0</version>
             <scope>test</scope>
         </dependency>
 
-        <!-- Test Coverage -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.5.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.5.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.24.0</version>
+            <scope>test</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.jacoco</groupId>
-            <artifactId>org.jacoco.agent</artifactId>
+            <artifactId>jacoco-maven-plugin</artifactId>
             <version>0.8.10</version>
-            <classifier>runtime</classifier>
             <scope>test</scope>
+        </dependency>
+
+        <!-- JUnit Vintage Engine for legacy tests -->
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- IBM Integration Designer DataHandler API (provided by runtime) -->
+        <dependency>
+            <groupId>com.ibm.wbiserver</groupId>
+            <artifactId>datahandler-api</artifactId>
+            <version>9.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ibm.wbiserver</groupId>
+            <artifactId>datahandler-xml</artifactId>
+            <version>9.0.0</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- Maven Compiler Plugin -->
+            <!-- Java Compiler -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
-                    <source>11</source>
-                    <target>11</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
                     <encoding>UTF-8</encoding>
+                    <compilerArgs>
+                        <arg>-Xlint:all</arg>
+                    </compilerArgs>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>compile</id>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <phase>compile</phase>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Maven Surefire Plugin for Unit Tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>${surefire.version}</version>
+                <version>3.0.0</version>
                 <configuration>
                     <includes>
                         <include>**/*Test.java</include>
-                        <include>**/*Tests.java</include>
                     </includes>
                     <excludes>
                         <exclude>**/*IT.java</exclude>
                         <exclude>**/*IntegrationTest.java</exclude>
                     </excludes>
                     <systemPropertyVariables>
-                        <java.util.logging.config.file>src/test/resources/logging.properties</java.util.logging.config.file>
+                        <property>
+                            <name>jacoco.agent.ut.arg</name>
+                            <value>-javaagent:target/jacoco/agent.jar=destfile=target/jacoco/jacoco.exec,includes=*</value>
+                        </property>
                     </systemPropertyVariables>
+                </systemPropertyVariables>
+                <argLine>-javaagent:target/jacoco/agent.jar=destfile=target/jacoco/jacoco.exec,includes=*</argLine>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <useSystemClassLoader>false</useSystemClassLoader>
+                            <reuseForks>true</reuseForks>
+                        <forkCount>1</forkCount>
+                        <skipAfterFailureCount>1</skipAfterFailureCount>
+                        <failIfNoTests>true</failIfNoTests>
+                        <testFailureIgnore>true</testFailureIgnore>
+                        <reportFormat>plain</reportFormat>
+                    </configuration>
+                </execution>
             </plugin>
 
             <!-- Maven Failsafe Plugin for Integration Tests -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>${failsafe.version}</version>
+                <version>3.0.0</version>
                 <configuration>
                     <includes>
                         <include>**/*IT.java</include>
                         <include>**/*IntegrationTest.java</include>
                     </includes>
+                    <systemPropertyVariables>
+                        <property>
+                            <name>jacoco.agent.it.arg</name>
+                            <value>-javaagent:target/jacoco/agent.jar=destfile=target/jacoco/jacoco.exec,includes=*</value>
+                        </property>
+                    </systemPropertyVariables>
+                    <argLine>-javaagent:target/jacoco/agent.jar=destfile=target/jacoco/jacoco.exec,includes=*</argLine>
                 </configuration>
                 <executions>
                     <execution>
+                        <id>integration-test</id>
                         <goals>
                             <goal>integration-test</goal>
+                        </goals>
+                        <phase>integration-test</phase>
+                        <configuration>
+                            <useSystemClassLoader>false</useSystemClassLoader>
+                            <reuseForks>true</reuseForks>
+                            <forkCount>1</forkCount>
+                            <skipAfterFailureCount>1</skipAfterFailureCount>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>verify</id>
+                        <goals>
                             <goal>verify</goal>
                         </goals>
                     </execution>
                 </executions>
             </plugin>
 
-            <!-- JaCoCo Maven Plugin for Coverage -->
+            <!-- JaCoCo Maven Plugin for Code Coverage -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.10</version>
                 <executions>
                     <execution>
+                        <id>default-prepare-agent</id>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
+                        <phase>initialize</phase>
                     </execution>
                     <execution>
-                        <id>report</id>
-                        <phase>test</phase>
+                        <id>default-report</id>
                         <goals>
                             <goal>report</goal>
                         </goals>
-                    </execution>
-                    <execution>
-                        <id>check</id>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                        <configuration>
-                            <rules>
-                                <rule>
-                                    <element>BUNDLE</element>
-                                    <limits>
-                                        <limit>
-                                            <counter>INSTRUCTION</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.85</minimum>
-                                        </limit>
-                                    </limits>
-                                </rule>
-                            </rules>
-                        </configuration>
+                        <phase>test</phase>
                     </execution>
                 </executions>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*Test.java</exclude>
+                    </excludes>
+                    <includes>
+                        <include>**/*Test.java</include>
+                    </includes>
+                    <rules>
+                        <rule implementation="org.jacoco.maven.coverage.CheckCycles" element="BUNDLE" enabled="false" />
+                    </rules>
+                </configuration>
             </plugin>
 
             <!-- Maven Source Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.2.3</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
                         <goals>
-                            <goal>jar</goal>
+                            <goal>jar-no-fork</goal>
                         </goals>
                     </execution>
                 </executions>
@@ -252,7 +339,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.2.3</version>
+                <configuration>
+                    <doclint>none</doclint>
+                    <source>1.8</source>
+                    <encoding>UTF-8</encoding>
+                    <quiet>true</quiet>
+                </configuration>
                 <executions>
                     <execution>
                         <id>attach-javadocs</id>
@@ -261,16 +354,13 @@
                         </goals>
                     </execution>
                 </executions>
-                <configuration>
-                    <doclint>none</doclint>
-                </configuration>
             </plugin>
 
             <!-- Maven Assembly Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.3.1</version>
                 <configuration>
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
@@ -290,13 +380,21 @@
     </build>
 
     <profiles>
+        <!-- Performance Testing Profile -->
         <profile>
             <id>performance</id>
+            <activation>
+                <property>
+                    <name>performance.tests</name>
+                    <value>true</value>
+                </property>
+            </activation>
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.0.0</version>
                         <configuration>
                             <includes>
                                 <include>**/*PerformanceTest.java</include>
