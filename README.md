@@ -5,6 +5,7 @@ Custom IBM Integration Designer data handler for converting Apache Thrift Object
 ## Overview
 
 This implementation provides a comprehensive solution for bidirectional transformation between Thrift objects and SDO DataObjects, following IBM's DataHandler pattern.
+Based on: [https://www.ibm.com/docs/en/baw/25.0.x?topic=registries-creating-custom-data-handler](https://www.ibm.com/docs/en/baw/25.0.x?topic=registries-creating-custom-data-handler)
 
 ## Features
 
