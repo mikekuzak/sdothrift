@@ -171,4 +171,4 @@ For issues and questions:
 
 ## License
 
-[Add license information here]
+AGPL-3.0 license
