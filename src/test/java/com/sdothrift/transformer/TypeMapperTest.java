@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.stream.Stream;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -166,7 +167,10 @@ class TypeMapperTest {
         java.util.List<String> stringList = java.util.Arrays.asList("a", "b", "c");
         assertThat(TypeMapper.getComponentType(stringList)).isEqualTo(String.class);
         
-        java.util.Set<Integer> intSet = java.util.Set.of(1, 2, 3);
+        java.util.Set<Integer> intSet = new java.util.HashSet<>();
+        intSet.add(1);
+        intSet.add(2);
+        intSet.add(3);
         assertThat(TypeMapper.getComponentType(intSet)).isEqualTo(Integer.class);
         
         java.util.List<Object> emptyList = new java.util.ArrayList<>();
@@ -234,7 +238,7 @@ class TypeMapperTest {
         assertThat(metadata2).isSameAs(metadata1);
         
         // Verify cache statistics
-        var stats = TypeMapper.getCacheStatistics();
+        Map<String, Integer> stats = TypeMapper.getCacheStatistics();
         assertThat(stats.get("fieldMetaDataCacheSize")).isGreaterThan(0);
     }
     
@@ -250,7 +254,7 @@ class TypeMapperTest {
         assertThat(fields2).isSameAs(fields1);
         
         // Verify cache statistics
-        var stats = TypeMapper.getCacheStatistics();
+        Map<String, Integer> stats = TypeMapper.getCacheStatistics();
         assertThat(stats.get("classFieldsCacheSize")).isGreaterThan(0);
     }
     
@@ -262,7 +266,7 @@ class TypeMapperTest {
         TypeMapper.getClassFields(TestDataGenerator.TestThriftStruct.class);
         
         // Verify caches are populated
-        var statsBefore = TypeMapper.getCacheStatistics();
+        Map<String, Integer> statsBefore = TypeMapper.getCacheStatistics();
         assertThat(statsBefore.get("fieldMetaDataCacheSize")).isGreaterThan(0);
         assertThat(statsBefore.get("classFieldsCacheSize")).isGreaterThan(0);
         
@@ -270,7 +274,7 @@ class TypeMapperTest {
         TypeMapper.clearCaches();
         
         // Verify caches are cleared
-        var statsAfter = TypeMapper.getCacheStatistics();
+        Map<String, Integer> statsAfter = TypeMapper.getCacheStatistics();
         assertThat(statsAfter.get("fieldMetaDataCacheSize")).isEqualTo(0);
         assertThat(statsAfter.get("classFieldsCacheSize")).isEqualTo(0);
     }
@@ -279,7 +283,7 @@ class TypeMapperTest {
     @DisplayName("Should provide cache statistics")
     void shouldProvideCacheStatistics() {
         // Initially empty
-        var stats = TypeMapper.getCacheStatistics();
+        Map<String, Integer> stats = TypeMapper.getCacheStatistics();
         assertThat(stats).containsKeys("fieldMetaDataCacheSize", "classFieldsCacheSize");
         assertThat(stats.get("fieldMetaDataCacheSize")).isEqualTo(0);
         assertThat(stats.get("classFieldsCacheSize")).isEqualTo(0);

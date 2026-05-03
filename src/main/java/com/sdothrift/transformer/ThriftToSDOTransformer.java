@@ -17,9 +17,9 @@ import org.eclipse.emf.ecore.EPackage;
 import org.eclipse.emf.ecore.EReference;
 import org.eclipse.emf.ecore.EStructuralFeature;
 import org.eclipse.emf.ecore.EcoreFactory;
+import org.eclipse.emf.ecore.EcorePackage;
 import org.eclipse.emf.ecore.impl.EObjectImpl;
 import org.eclipse.emf.ecore.sdo.EDataObject;
-import org.eclipse.emf.ecore.sdo.util.SDOUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -262,13 +262,15 @@ public class ThriftToSDOTransformer {
         
         Map<Object, Object> sdoMap = new java.util.HashMap<>();
         
-        for (Map.Entry<String, JsonNode> entry : objectNode.fields()) {
+        java.util.Iterator<Map.Entry<String, JsonNode>> iter = objectNode.fields();
+        while (iter.hasNext()) {
+            Map.Entry<String, JsonNode> entry = iter.next();
             String key = entry.getKey();
             JsonNode valueNode = entry.getValue();
-            
+
             Object sdoKey = convertToSDOType(key, String.class);
             Object sdoValue = transformCollectionElementToSDO(valueNode, metaData);
-            
+
             sdoMap.put(sdoKey, sdoValue);
         }
         
@@ -294,12 +296,6 @@ public class ThriftToSDOTransformer {
             
             // For now, create a generic approach
             return createGenericSDOFromJson(structNode, structName);
-            
-            // Create a temporary Thrift object to get the field metadata
-            TBase tempObject = (TBase) structClass.getDeclaredConstructor().newInstance();
-            
-            // Transform the JSON to SDO
-            return transformJsonToSDO(structNode, tempObject.getClass());
             
         } catch (Exception e) {
             logger.error("Failed to transform struct to SDO: {}", metaData.toString(), e);
@@ -503,7 +499,10 @@ public class ThriftToSDOTransformer {
                 // Create EReference for struct types
                 EReference reference = EcoreFactory.eINSTANCE.createEReference();
                 reference.setName(metaData.fieldName);
-                reference.setEType(getOrCreateEClass(metaData.valueMetaData.structClass));
+                if (metaData.valueMetaData instanceof org.apache.thrift.meta_data.StructMetaData) {
+                    org.apache.thrift.meta_data.StructMetaData structMeta = (org.apache.thrift.meta_data.StructMetaData) metaData.valueMetaData;
+                    reference.setEType(getOrCreateEClass(structMeta.structClass));
+                }
                 eClass.getEStructuralFeatures().add(reference);
             }
         }
@@ -527,20 +526,24 @@ public class ThriftToSDOTransformer {
             eClass.setName(structName);
             
             // Add attributes based on JSON fields
-            for (Map.Entry<String, JsonNode> entry : structNode.fields()) {
-                String fieldName = entry.getKey();
-                EAttribute attribute = EcoreFactory.eINSTANCE.createEAttribute();
-                attribute.setName(fieldName);
-                attribute.setEType(EcoreFactory.eINSTANCE.getEString()); // Default to String
-                eClass.getEStructuralFeatures().add(attribute);
-            }
+        java.util.Iterator<Map.Entry<String, JsonNode>> iter1 = structNode.fields();
+        while (iter1.hasNext()) {
+            Map.Entry<String, JsonNode> entry = iter1.next();
+            String fieldName = entry.getKey();
+            EAttribute attribute = EcoreFactory.eINSTANCE.createEAttribute();
+            attribute.setName(fieldName);
+            attribute.setEType(EcorePackage.eINSTANCE.getEString()); // Default to String
+            eClass.getEStructuralFeatures().add(attribute);
+        }
             
             EDataObject dataObject = (EDataObject) EcoreFactory.eINSTANCE.create(eClass);
             
             // Set values
-            for (Map.Entry<String, JsonNode> entry : structNode.fields()) {
-                String fieldName = entry.getKey();
-                JsonNode valueNode = entry.getValue();
+        java.util.Iterator<Map.Entry<String, JsonNode>> iter2 = structNode.fields();
+        while (iter2.hasNext()) {
+            Map.Entry<String, JsonNode> entry = iter2.next();
+            String fieldName = entry.getKey();
+            JsonNode valueNode = entry.getValue();
                 
                 Object value = null;
                 if (!valueNode.isNull()) {

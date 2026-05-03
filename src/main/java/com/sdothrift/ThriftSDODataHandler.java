@@ -231,7 +231,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return processed data
      * @throws IOException if reading fails
      */
-    private Object processInputStream(InputStream inputStream) throws IOException {
+    private Object processInputStream(InputStream inputStream) throws IOException, ThriftSDODataHandlerException {
         // Reset stream if possible
         if (inputStream.markSupported()) {
             inputStream.reset();
@@ -256,7 +256,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @param bytes the byte array
      * @return processed data
      */
-    private Object processByteArray(byte[] bytes) {
+    private Object processByteArray(byte[] bytes) throws ThriftSDODataHandlerException {
         return thriftSerializer.convertInputToString(bytes);
     }
     
@@ -267,7 +267,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return processed data
      * @throws IOException if reading fails
      */
-    private Object processReader(Reader reader) throws IOException {
+    private Object processReader(Reader reader) throws IOException, ThriftSDODataHandlerException {
         // Reset reader if possible
         if (reader.markSupported()) {
             reader.reset();
@@ -297,7 +297,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return true if SDO to Thrift transformation
      */
     private boolean isSDOToThriftTransformation(Object source, Class<?> targetClass) {
-        return (source instanceof EDataObject || isValidSDOJson(source)) && 
+        return (source instanceof EDataObject) && 
                (targetClass != null && TBase.class.isAssignableFrom(targetClass));
     }
     
@@ -315,20 +315,6 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
         return false;
     }
     
-    /**
-     * Checks if the source is valid SDO JSON.
-     * This is a simplified check - in practice, you'd need more sophisticated validation.
-     *
-     * @param source the source object
-     * @return true if valid SDO JSON
-     */
-    private boolean isValidSDOJson(Object source) {
-        if (source instanceof String) {
-            String jsonStr = (String) source;
-            return thriftSerializer.isValidJson(jsonStr);
-        }
-        return false;
-    }
     
     /**
      * Performs Thrift to SDO transformation.

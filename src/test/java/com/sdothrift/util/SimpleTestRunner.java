@@ -1,16 +1,16 @@
 package com.sdothrift.util;
 
-// import com.sdothrift.transformer.ThriftToSDOTransformer;
-// import com.sdothrift.transformer.SDOToThriftTransformer;
-// import com.sdothrift.config.ThriftSDOConfiguration;
-// import com.sdothrift.util.TestDataGenerator;
-// import com.sdothrift.util.TestFailureAnalyzer;
+import com.sdothrift.transformer.ThriftToSDOTransformer;
+import com.sdothrift.transformer.SDOToThriftTransformer;
+import com.sdothrift.config.ThriftSDOConfiguration;
+import com.sdothrift.util.TestDataGenerator;
+import com.sdothrift.util.TestFailureAnalyzer;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
-// import java.lang.reflect.Method;
-// import java.util.ArrayList;
-// import java.util.List;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Simple test runner for executing tests when Maven is not available.
@@ -193,7 +193,19 @@ public class SimpleTestRunner {
         
         if ("all".equalsIgnoreCase(testName)) {
             try {
-                Class<?> testClass = Class.forName("com.sdothrift.transformer." + testClassName);
+                Class<?> testClass = null;
+                try {
+                    // Try transformer package first
+                    testClass = Class.forName("com.sdothrift.transformer." + testClassName);
+                } catch (ClassNotFoundException e1) {
+                    // Try root package if transformer package fails
+                    try {
+                        testClass = Class.forName("com.sdothrift." + testClassName);
+                    } catch (ClassNotFoundException e2) {
+                        // Try the class name directly as fallback
+                        testClass = Class.forName(testClassName);
+                    }
+                }
                 int passedTests = runAllTests(testClass);
                 System.exit(passedTests == getExpectedTestCount(testClass) ? 0 : 1);
             } catch (ClassNotFoundException e) {
@@ -202,7 +214,19 @@ public class SimpleTestRunner {
             }
         } else {
             try {
-                Class<?> testClass = Class.forName("com.sdothrift.transformer." + testClassName);
+                Class<?> testClass = null;
+                try {
+                    // Try transformer package first
+                    testClass = Class.forName("com.sdothrift.transformer." + testClassName);
+                } catch (ClassNotFoundException e1) {
+                    // Try root package if transformer package fails
+                    try {
+                        testClass = Class.forName("com.sdothrift." + testClassName);
+                    } catch (ClassNotFoundException e2) {
+                        // Try the class name directly as fallback
+                        testClass = Class.forName(testClassName);
+                    }
+                }
                 boolean passed = runSingleTest(testClass, testName);
                 System.exit(passed ? 0 : 1);
             } catch (ClassNotFoundException e) {
@@ -233,5 +257,23 @@ public class SimpleTestRunner {
             default:
                 return 0;
         }
+    }
+
+    /**
+     * Creates a repeated string.
+     *
+     * @param str the string to repeat
+     * @param count the number of times
+     * @return the repeated string
+     */
+    private static String createRepeatedString(String str, int count) {
+        if (str == null || count <= 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            sb.append(str);
+        }
+        return sb.toString();
     }
 }

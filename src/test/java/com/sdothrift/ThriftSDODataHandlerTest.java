@@ -75,8 +75,8 @@ class ThriftSDODataHandlerTest {
         
         private ThriftSDOConfiguration createTestConfiguration() {
             ThriftSDOConfiguration config = new ThriftSDOConfiguration();
-            config.setThriftProtocol(ThiftSDOConfiguration.ThriftProtocol.JSON);
-            config.setNullHandlingStrategy(ThiftSDOConfiguration.NullHandlingStrategy.PRESERVE);
+            config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.JSON);
+            config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.PRESERVE);
             config.setPerformanceCachingEnabled(true);
             config.setStrictValidationEnabled(true);
             config.setBufferSize(4096);
@@ -86,8 +86,8 @@ class ThriftSDODataHandlerTest {
     
     @BeforeEach
     @DisplayName("Initialize data handler with test configuration")
-    void setUp(ThiftSDOConfiguration config) {
-        this.configuration = config != null ? createTestConfiguration() : config;
+    void setUp(ThriftSDOConfiguration config) {
+        this.configuration = config != null ? config : createTestConfiguration();
         this.dataHandler = new ThriftSDODataHandler(this.configuration);
         
         // Set binding context
@@ -100,9 +100,18 @@ class ThriftSDODataHandlerTest {
         this.dataHandler.setBindingContext(bindingContext);
     }
     
+    private ThriftSDOConfiguration createTestConfiguration() {
+        ThriftSDOConfiguration config = new ThriftSDOConfiguration();
+        config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.BINARY);
+        config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.PRESERVE);
+        config.setPerformanceCachingEnabled(true);
+        config.setStrictValidationEnabled(false);
+        return config;
+    }
+    
     @Test
     @DisplayName("Should transform Thrift object to SDO")
-    void shouldTransformThriftObjectToSDO(TestDataGenerator.TestThriftStruct thriftStruct) {
+    void shouldTransformThriftObjectToSDO(TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
         try {
             Object result = dataHandler.transform(thriftStruct, EDataObject.class, null);
             
@@ -115,7 +124,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform SDO object to Thrift")
-    void shouldTransformSDOObjectToThrift(EDataObject sdoObject) {
+    void shouldTransformSDOObjectToThrift(EDataObject sdoObject) throws Exception {
         try {
             Object result = dataHandler.transform(sdoObject, TestDataGenerator.TestThriftStruct.class, null);
             
@@ -132,7 +141,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform JSON string to Thrift")
-    void shouldTransformJsonStringToThrift(String jsonInput) {
+    void shouldTransformJsonStringToThrift(String jsonInput) throws Exception {
         try {
             Object result = dataHandler.transform(jsonInput, TestDataGenerator.TestThriftStruct.class, null);
             
@@ -145,7 +154,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform Thrift JSON to SDO")
-    void shouldTransformThriftJsonToSDO() {
+    void shouldTransformThriftJsonToSDO() throws Exception {
         try {
             Object result = dataHandler.transform(TestDataGenerator.createTestThriftJson(), EDataObject.class, null);
             
@@ -174,7 +183,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle byte array input correctly")
-    void shouldHandleByteArrayInput() {
+    void shouldHandleByteArrayInput() throws Exception {
         String testContent = TestDataGenerator.createTestThriftJson();
         byte[] byteArray = testContent.getBytes();
         
@@ -206,7 +215,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle null input according to configuration")
-    void shouldHandleNullInputAccordingToConfiguration() {
+    void shouldHandleNullInputAccordingToConfiguration() throws Exception {
         // Test with ERROR strategy
         ThriftSDOConfiguration errorConfig = new ThriftSDOConfiguration();
         errorConfig.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.ERROR);
@@ -225,7 +234,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle null input with PRESERVE strategy")
-    void shouldHandleNullInputWithPreserveStrategy() {
+    void shouldHandleNullInputWithPreserveStrategy() throws Exception {
         // Test with PRESERVE strategy
         ThriftSDOConfiguration preserveConfig = new ThriftSDOConfiguration();
         preserveConfig.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.PRESERVE);
@@ -244,7 +253,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle null input with DEFAULT strategy")
-    void shouldHandleNullInputWithDefaultStrategy() {
+    void shouldHandleNullInputWithDefaultStrategy() throws Exception {
         // Test with DEFAULT strategy
         ThriftSDOConfiguration defaultConfig = new ThriftSDOConfiguration();
         defaultConfig.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.DEFAULT);
@@ -265,7 +274,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle transformation options")
-    void shouldHandleTransformationOptions() {
+    void shouldHandleTransformationOptions() throws Exception {
         try {
             Map<String, Object> options = new HashMap<>();
             options.put("test.option", "test.value");
@@ -281,7 +290,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should update configuration from binding context")
-    void shouldUpdateConfigurationFromBindingContext() {
+    void shouldUpdateConfigurationFromBindingContext() throws Exception {
         Map<String, Object> newBindingContext = new HashMap<>();
         newBindingContext.put("thrift.protocol", "COMPACT");
         newBindingContext.put("null.handling.strategy", "OMIT");
@@ -291,13 +300,13 @@ class ThriftSDODataHandlerTest {
         
         ThriftSDOConfiguration updatedConfig = dataHandler.getConfiguration();
         assertThat(updatedConfig.getThriftProtocol()).isEqualTo(ThriftSDOConfiguration.ThriftProtocol.COMPACT);
-        assertThat(updatedConfig.getNullHandlingStrategy()).isEqualTo(ThiftSDOConfiguration.NullHandlingStrategy.OMIT);
+        assertThat(updatedConfig.getNullHandlingStrategy()).isEqualTo(ThriftSDOConfiguration.NullHandlingStrategy.OMIT);
         assertThat(updatedConfig.isPerformanceCachingEnabled()).isFalse();
     }
     
     @Test
     @DisplayName("Should handle transformInto correctly")
-    void shouldHandleTransformIntoCorrectly() {
+    void shouldHandleTransformIntoCorrectly() throws Exception {
         EDataObject sourceSDO = createTestSDOObject();
         TestDataGenerator.TestThriftStruct targetThrift = new TestDataGenerator.TestThriftStruct();
         
@@ -313,7 +322,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle different null handling strategies in transformInto")
-    void shouldHandleDifferentNullHandlingStrategiesInTransformInto() {
+    void shouldHandleDifferentNullHandlingStrategiesInTransformInto() throws Exception {
         ThriftSDOConfiguration errorConfig = new ThriftSDOConfiguration();
         errorConfig.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.ERROR);
         
@@ -334,7 +343,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle incompatible transformation scenarios")
-    void shouldHandleIncompatibleTransformationScenarios() {
+    void shouldHandleIncompatibleTransformationScenarios() throws Exception {
         try {
             // Try to transform incompatible types
             dataHandler.transform(new Object(), String.class, null);
@@ -346,7 +355,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should provide configuration access")
-    void shouldProvideConfigurationAccess() {
+    void shouldProvideConfigurationAccess() throws Exception {
         ThriftSDOConfiguration config = dataHandler.getConfiguration();
         assertThat(config).isNotNull();
         assertThat(config.getThriftProtocol()).isEqualTo(configuration.getThriftProtocol());
@@ -356,7 +365,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should provide binding context access")
-    void shouldProvideBindingContextAccess() {
+    void shouldProvideBindingContextAccess() throws Exception {
         Map<String, Object> context = dataHandler.getBindingContext();
         assertThat(context).isNotNull();
         assertThat(context).containsKey("thrift.protocol");
@@ -365,7 +374,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should clear caches successfully")
-    void shouldClearCachesSuccessfully() {
+    void shouldClearCachesSuccessfully() throws Exception {
         // Perform some operations to populate caches
         dataHandler.transform(TestDataGenerator.createTestThriftStruct(), EDataObject.class, null);
         
@@ -382,7 +391,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should validate configuration")
-    void shouldValidateConfiguration() {
+    void shouldValidateConfiguration() throws Exception {
         // This should not throw any exceptions
         assertThatCode(() -> dataHandler.validateConfiguration()).doesNotThrowAnyException();
         
@@ -399,7 +408,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle performance tests")
-    void shouldHandlePerformanceTests() {
+    void shouldHandlePerformanceTests() throws Exception {
         TestDataGenerator.TestThriftStruct largeStruct = createLargeTestStruct();
         
         long startTime = System.currentTimeMillis();
@@ -416,7 +425,7 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should handle edge cases")
-    void shouldHandleEdgeCases() {
+    void shouldHandleEdgeCases() throws Exception {
         Object[] edgeCases = TestDataGenerator.createEdgeCaseData();
         
         for (Object edgeCase : edgeCases) {
@@ -440,7 +449,7 @@ class ThriftSDODataHandlerTest {
         return new EDataObject() {
             @Override
             public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.EClass() {
+                return new org.eclipse.emf.ecore.impl.EClassImpl() {
                     @Override
                     public String getName() {
                         return "TestStruct";
@@ -448,7 +457,7 @@ class ThriftSDODataHandlerTest {
                     
                     @Override
                     public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.EPackage() {
+                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
                             @Override
                             public String getName() {
                                 return "test.package";
@@ -471,9 +480,12 @@ class ThriftSDODataHandlerTest {
                     case "score":
                         return 95.5;
                     case "tags":
-                        return java.util.List.of("tag1", "tag2", "tag3");
+                        return java.util.Arrays.asList("tag1", "tag2", "tag3");
                     case "properties":
-                        return java.util.Map.of("key1", "value1", "key2", "value2");
+                        java.util.Map<String, String> props = new java.util.HashMap<>();
+                        props.put("key1", "value1");
+                        props.put("key2", "value2");
+                        return props;
                     case "nested":
                         return new TestDataGenerator.TestNestedStruct("nested_value", "nested_description");
                     default:
@@ -501,7 +513,7 @@ class ThriftSDODataHandlerTest {
         return new EDataObject() {
             @Override
             public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.EClass() {
+                return new org.eclipse.emf.ecore.impl.EClassImpl() {
                     @Override
                     public String getName() {
                         return "NullStruct";
@@ -509,7 +521,7 @@ class ThriftSDODataHandlerTest {
                     
                     @Override
                     public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.EPackage() {
+                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
                             @Override
                             public String getName() {
                                 return "test.package";
@@ -567,7 +579,7 @@ class ThriftSDODataHandlerTest {
     @ParameterizedTest
     @MethodSource("provideNullHandlingScenarios")
     @DisplayName("Should handle various null handling strategies")
-    void shouldHandleVariousNullHandlingStrategies(String strategy, Object input, Class<?> targetClass) {
+    void shouldHandleVariousNullHandlingStrategies(String strategy, Object input, Class<?> targetClass) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.fromString(strategy));
         

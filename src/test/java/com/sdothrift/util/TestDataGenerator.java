@@ -6,6 +6,8 @@ import org.apache.thrift.TBase;
 import org.apache.thrift.TException;
 import org.apache.thrift.meta_data.FieldMetaData;
 import org.apache.thrift.meta_data.FieldValueMetaData;
+import org.apache.thrift.meta_data.ListMetaData;
+import org.apache.thrift.meta_data.MapMetaData;
 import org.apache.thrift.meta_data.StructMetaData;
 import org.apache.thrift.protocol.TType;
 import org.eclipse.emf.ecore.EAttribute;
@@ -86,174 +88,51 @@ public class TestDataGenerator {
             }
         }
         
-        private static final Map<_Fields, FieldMetaData> metaDataMap;
+        public static final Map<_Fields, FieldMetaData> metaDataMap;
         
         static {
             Map<_Fields, FieldMetaData> tmpMap = new HashMap<>();
             
             FieldMetaData idMetaData = new FieldMetaData(
                 "id", 
-                TType.I32, 
-                1, 
-                FieldValueMetaData.I32, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.I32)
             );
             
             FieldMetaData nameMetaData = new FieldMetaData(
                 "name", 
-                TType.STRING, 
-                2, 
-                FieldValueMetaData.STRING, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.STRING)
             );
             
             FieldMetaData activeMetaData = new FieldMetaData(
                 "active", 
-                TType.BOOL, 
-                3, 
-                FieldValueMetaData.BOOL, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.BOOL)
             );
             
             FieldMetaData scoreMetaData = new FieldMetaData(
                 "score", 
-                TType.DOUBLE, 
-                4, 
-                FieldValueMetaData.DOUBLE, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.DOUBLE)
             );
             
             FieldMetaData tagsMetaData = new FieldMetaData(
                 "tags", 
-                TType.LIST, 
-                5, 
-                new FieldValueMetaData(TType.STRING), 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.OPTIONAL,
+                new ListMetaData(TType.LIST, new FieldValueMetaData(TType.STRING))
             );
             
             FieldMetaData propertiesMetaData = new FieldMetaData(
                 "properties", 
-                TType.MAP, 
-                6, 
-                new FieldValueMetaData(TType.STRING), 
-                new FieldValueMetaData(TType.STRING), 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.OPTIONAL,
+                new MapMetaData(TType.MAP, new FieldValueMetaData(TType.STRING), new FieldValueMetaData(TType.STRING))
             );
             
             FieldMetaData nestedMetaData = new FieldMetaData(
                 "nested", 
-                TType.STRUCT, 
-                7, 
-                new StructMetaData(TType.STRUCT, TestNestedStruct.class), 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.OPTIONAL,
+                new StructMetaData(TType.STRUCT, TestNestedStruct.class)
             );
             
             tmpMap.put(_Fields.ID, idMetaData);
@@ -266,8 +145,6 @@ public class TestDataGenerator {
             
             metaDataMap = java.util.Collections.unmodifiableMap(tmpMap);
         }
-        
-        public static final Map<_Fields, FieldMetaData> metaDataMap = metaDataMap;
         
         private int id;
         private String name;
@@ -301,6 +178,64 @@ public class TestDataGenerator {
         @Override
         public TestThriftStruct deepCopy() {
             return new TestThriftStruct(id, name, active, score, tags, properties, nested);
+        }
+        
+        @Override
+        public void clear() {
+            this.id = 0;
+            this.name = "";
+            this.active = false;
+            this.score = 0.0;
+            this.tags = new ArrayList<>();
+            this.properties = new HashMap<>();
+            this.nested = null;
+        }
+        
+        @Override
+        public _Fields fieldForId(int fieldId) {
+            return _Fields.findByThriftId(fieldId);
+        }
+        
+        @Override
+        public boolean isSet(_Fields field) {
+            if (field == null) return false;
+            switch (field) {
+                case ID: return true;
+                case NAME: return name != null && !name.isEmpty();
+                case ACTIVE: return true;
+                case SCORE: return true;
+                case TAGS: return tags != null && !tags.isEmpty();
+                case PROPERTIES: return properties != null && !properties.isEmpty();
+                case NESTED: return nested != null;
+                default: return false;
+            }
+        }
+        
+        @Override
+        public Object getFieldValue(_Fields field) {
+            switch (field) {
+                case ID: return id;
+                case NAME: return name;
+                case ACTIVE: return active;
+                case SCORE: return score;
+                case TAGS: return tags;
+                case PROPERTIES: return properties;
+                case NESTED: return nested;
+                default: return null;
+            }
+        }
+        
+        @Override
+        public void setFieldValue(_Fields field, Object value) {
+            switch (field) {
+                case ID: setId((Integer) value); break;
+                case NAME: setName((String) value); break;
+                case ACTIVE: setActive((Boolean) value); break;
+                case SCORE: setScore((Double) value); break;
+                case TAGS: setTags((List<String>) value); break;
+                case PROPERTIES: setProperties((Map<String, String>) value); break;
+                case NESTED: setNested((TestNestedStruct) value); break;
+            }
         }
         
         // Getters and setters
@@ -358,10 +293,15 @@ public class TestDataGenerator {
                    java.util.Objects.equals(nested, that.nested);
         }
         
-        @Override
-        public int hashCode() {
-            return java.util.Objects.hash(id, name, active, score, tags, properties, nested);
+@Override
+public int hashCode() {
+return java.util.Objects.hash(id, name, active, score, tags, properties, nested);
         }
+        
+        @Override
+        public int compareTo(TestThriftStruct other) {
+            return this.name.compareTo(other.name);
+    }
     }
     
     /**
@@ -412,57 +352,21 @@ public class TestDataGenerator {
             }
         }
         
-        private static final Map<_Fields, FieldMetaData> metaDataMap;
+        public static final Map<_Fields, FieldMetaData> metaDataMap;
         
         static {
             Map<_Fields, FieldMetaData> tmpMap = new HashMap<>();
             
             FieldMetaData valueMetaData = new FieldMetaData(
                 "value", 
-                TType.STRING, 
-                1, 
-                FieldValueMetaData.STRING, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.STRING)
             );
             
             FieldMetaData descriptionMetaData = new FieldMetaData(
                 "description", 
-                TType.STRING, 
-                2, 
-                FieldValueMetaData.STRING, 
-                false, 
-                false, 
-                false, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null, 
-                null
+                org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.STRING)
             );
             
             tmpMap.put(_Fields.VALUE, valueMetaData);
@@ -470,8 +374,6 @@ public class TestDataGenerator {
             
             metaDataMap = java.util.Collections.unmodifiableMap(tmpMap);
         }
-        
-        public static final Map<_Fields, FieldMetaData> metaDataMap = metaDataMap;
         
         private String value;
         private String description;
@@ -489,6 +391,44 @@ public class TestDataGenerator {
         @Override
         public TestNestedStruct deepCopy() {
             return new TestNestedStruct(value, description);
+        }
+        
+        @Override
+        public void clear() {
+            this.value = "";
+            this.description = "";
+        }
+        
+        @Override
+        public _Fields fieldForId(int fieldId) {
+            return _Fields.findByThriftId(fieldId);
+        }
+        
+        @Override
+        public boolean isSet(_Fields field) {
+            if (field == null) return false;
+            switch (field) {
+                case VALUE: return value != null && !value.isEmpty();
+                case DESCRIPTION: return description != null && !description.isEmpty();
+                default: return false;
+            }
+        }
+        
+        @Override
+        public Object getFieldValue(_Fields field) {
+            switch (field) {
+                case VALUE: return value;
+                case DESCRIPTION: return description;
+                default: return null;
+            }
+        }
+        
+        @Override
+        public void setFieldValue(_Fields field, Object val) {
+            switch (field) {
+                case VALUE: setValue((String) val); break;
+                case DESCRIPTION: setDescription((String) val); break;
+            }
         }
         
         public String getValue() { return value; }
@@ -521,10 +461,15 @@ public class TestDataGenerator {
                    java.util.Objects.equals(description, that.description);
         }
         
-        @Override
-        public int hashCode() {
-            return java.util.Objects.hash(value, description);
+@Override
+public int hashCode() {
+return java.util.Objects.hash(value, description);
         }
+        
+        @Override
+        public int compareTo(TestNestedStruct other) {
+            return this.value.compareTo(other.value);
+    }
     }
     
     /**

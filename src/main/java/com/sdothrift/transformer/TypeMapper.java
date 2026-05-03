@@ -29,28 +29,30 @@ public class TypeMapper {
     /**
      * Thrift type to SDO type mapping for base types.
      */
-    public static final Map<Byte, Class<?>> THRIFT_TO_SDO_TYPES = Map.of(
-        TType.BOOL, Boolean.class,
-        TType.BYTE, Byte.class,
-        TType.I16, Short.class,
-        TType.I32, Integer.class,
-        TType.I64, Long.class,
-        TType.DOUBLE, Double.class,
-        TType.STRING, String.class
-    );
+    public static final Map<Byte, Class<?>> THRIFT_TO_SDO_TYPES = new java.util.HashMap<Byte, Class<?>>();
+    static {
+        THRIFT_TO_SDO_TYPES.put(TType.BOOL, Boolean.class);
+        THRIFT_TO_SDO_TYPES.put(TType.BYTE, Byte.class);
+        THRIFT_TO_SDO_TYPES.put(TType.I16, Short.class);
+        THRIFT_TO_SDO_TYPES.put(TType.I32, Integer.class);
+        THRIFT_TO_SDO_TYPES.put(TType.I64, Long.class);
+        THRIFT_TO_SDO_TYPES.put(TType.DOUBLE, Double.class);
+        THRIFT_TO_SDO_TYPES.put(TType.STRING, String.class);
+    }
     
     /**
      * SDO type to Thrift type mapping for base types.
      */
-    public static final Map<Class<?>, Byte> SDO_TO_THRIFT_TYPES = Map.of(
-        Boolean.class, TType.BOOL,
-        Byte.class, TType.BYTE,
-        Short.class, TType.I16,
-        Integer.class, TType.I32,
-        Long.class, TType.I64,
-        Double.class, TType.DOUBLE,
-        String.class, TType.STRING
-    );
+    public static final Map<Class<?>, Byte> SDO_TO_THRIFT_TYPES = new java.util.HashMap<Class<?>, Byte>();
+    static {
+        SDO_TO_THRIFT_TYPES.put(Boolean.class, TType.BOOL);
+        SDO_TO_THRIFT_TYPES.put(Byte.class, TType.BYTE);
+        SDO_TO_THRIFT_TYPES.put(Short.class, TType.I16);
+        SDO_TO_THRIFT_TYPES.put(Integer.class, TType.I32);
+        SDO_TO_THRIFT_TYPES.put(Long.class, TType.I64);
+        SDO_TO_THRIFT_TYPES.put(Double.class, TType.DOUBLE);
+        SDO_TO_THRIFT_TYPES.put(String.class, TType.STRING);
+    }
     
     /**
      * Maps Thrift type identifier to corresponding SDO class.

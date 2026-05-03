@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.stream.Stream;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -88,7 +89,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should transform SDO to basic Thrift struct")
-    void shouldTransformSDOToBasicThriftStruct() {
+    void shouldTransformSDOToBasicThriftStruct() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createTestSDOFromTestData();
         
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
@@ -105,7 +106,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should handle null SDO transformation")
-    void shouldHandleNullSDOTransformation() {
+    void shouldHandleNullSDOTransformation() throws Exception {
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(null, TestDataGenerator.TestThriftStruct.class);
         
         assertThat(result).isNull();
@@ -113,7 +114,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should validate transformation before execution")
-    void shouldValidateTransformationBeforeExecution() {
+    void shouldValidateTransformationBeforeExecution() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createTestSDOFromTestData();
         
         boolean isValid = transformer.validateTransformation(sdoObject, TestDataGenerator.TestThriftStruct.class);
@@ -123,7 +124,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should fail validation for invalid SDO")
-    void shouldFailValidationForInvalidSDO() {
+    void shouldFailValidationForInvalidSDO() throws Exception {
         // Create an SDO with missing required fields
         org.eclipse.emf.ecore.sdo.EDataObject invalidSDO = createInvalidSDO();
         
@@ -136,7 +137,7 @@ class SDOToThriftTransformerTest {
     @DisplayName("Should handle different null handling strategies")
     @ParameterizedTest
     @ValueSource(strings = {"PRESERVE", "DEFAULT", "OMIT", "ERROR"})
-    void shouldHandleDifferentNullHandlingStrategies(String strategy) {
+    void shouldHandleDifferentNullHandlingStrategies(String strategy) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.fromString(strategy));
         
@@ -159,7 +160,7 @@ class SDOToThriftTransformerTest {
     @DisplayName("Should handle different Thrift protocols")
     @ParameterizedTest
     @ValueSource(strings = {"BINARY", "COMPACT", "JSON"})
-    void shouldHandleDifferentThriftProtocols(String protocol, org.eclipse.emf.ecore.sdo.EDataObject sdoObject) {
+    void shouldHandleDifferentThriftProtocols(String protocol, org.eclipse.emf.ecore.sdo.EDataObject sdoObject) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.fromString(protocol));
         
@@ -174,7 +175,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should handle complex nested structures")
-    void shouldHandleComplexNestedStructures() {
+    void shouldHandleComplexNestedStructures() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createComplexTestSDO();
         
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
@@ -191,7 +192,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should handle edge cases in transformation")
-    void shouldHandleEdgeCasesInTransformation() {
+    void shouldHandleEdgeCasesInTransformation() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject edgeCaseSDO = createEdgeCaseTestSDO();
         
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(edgeCaseSDO, TestDataGenerator.TestThriftStruct.class);
@@ -203,7 +204,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should provide cache statistics")
-    void shouldProvideCacheStatistics() {
+    void shouldProvideCacheStatistics() throws Exception {
         Map<String, Integer> initialStats = transformer.getCacheStatistics();
         assertThat(initialStats.get("constructorCacheSize")).isEqualTo(0);
         assertThat(initialStats.get("fieldMetaDataCacheSize")).isEqualTo(0);
@@ -219,7 +220,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should clear caches successfully")
-    void shouldClearCachesSuccessfully() {
+    void shouldClearCachesSuccessfully() throws Exception {
         // Populate caches
         transformer.transformToThrift(createTestSDOFromTestData(), TestDataGenerator.TestThriftStruct.class);
         
@@ -236,7 +237,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should handle large objects efficiently")
-    void shouldHandleLargeObjectsEfficiently() {
+    void shouldHandleLargeObjectsEfficiently() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject largeSDO = createLargeTestSDO();
         
         long startTime = System.currentTimeMillis();
@@ -249,7 +250,7 @@ class SDOToThriftTransformerTest {
     
     @Test
     @DisplayName("Should handle special characters in strings")
-    void shouldHandleSpecialCharactersInStrings() {
+    void shouldHandleSpecialCharactersInStrings() throws Exception {
         String specialChars = "Test with special chars: 你好世界 🌍 emoji test";
         org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createSDOWithSpecialCharacters(specialChars);
         
@@ -319,7 +320,7 @@ class SDOToThriftTransformerTest {
         return new org.eclipse.emf.ecore.sdo.EDataObject() {
             @Override
             public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.EClass() {
+                return new org.eclipse.emf.ecore.impl.EClassImpl() {
                     @Override
                     public String getName() {
                         return name;
@@ -327,7 +328,7 @@ class SDOToThriftTransformerTest {
                     
                     @Override
                     public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.EPackage() {
+                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
                             @Override
                             public String getName() {
                                 return "test.package";
@@ -350,9 +351,12 @@ class SDOToThriftTransformerTest {
                     case "score":
                         return 95.5;
                     case "tags":
-                        return java.util.List.of("tag1", "tag2", "tag3");
+                        return java.util.Arrays.asList("tag1", "tag2", "tag3");
                     case "properties":
-                        return java.util.Map.of("key1", "value1", "key2", "value2");
+                        java.util.Map<String, String> props = new java.util.HashMap<>();
+                        props.put("key1", "value1");
+                        props.put("key2", "value2");
+                        return props;
                     case "nested":
                         return new TestDataGenerator.TestNestedStruct("nested_value", "nested_description");
                     default:

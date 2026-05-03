@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -266,7 +267,7 @@ public class SDOToThriftTransformer {
         try {
             if (feature instanceof EAttribute) {
                 EAttribute attribute = (EAttribute) feature;
-                Class<?> instanceClass = attribute.getInstanceClass();
+                Class<?> instanceClass = attribute.getEType().getInstanceClass();
                 
                 if (instanceClass == boolean.class || instanceClass == Boolean.class) {
                     return false;
@@ -344,7 +345,7 @@ public class SDOToThriftTransformer {
             for (Object entry : thriftFields.values()) {
                 if (entry instanceof FieldMetaData) {
                     FieldMetaData metaData = (FieldMetaData) entry;
-                    if (metaData.requirementType == FieldMetaData.REQUIRED) {
+                    if (metaData.requirementType == org.apache.thrift.TFieldRequirementType.REQUIRED) {
                         requiredThriftFields++;
                     }
                 }
@@ -385,7 +386,7 @@ public class SDOToThriftTransformer {
         String className = thriftClass.getName();
         return (Constructor<T>) constructorCache.computeIfAbsent(className, k -> {
             try {
-                Constructor<?> constructor = thriftClass.getDeclaredConstructor();
+                Constructor<? extends TBase> constructor = (Constructor<? extends TBase>) thriftClass.getDeclaredConstructor();
                 constructor.setAccessible(true);
                 return constructor;
             } catch (Exception e) {

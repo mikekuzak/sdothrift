@@ -86,7 +86,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should transform basic Thrift struct to SDO")
-    void shouldTransformBasicThriftStructToSDO(TestDataGenerator.TestThriftStruct thriftStruct) {
+    void shouldTransformBasicThriftStructToSDO(TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(thriftStruct);
         
         assertThat(result).isNotNull();
@@ -95,7 +95,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle null Thrift struct transformation")
-    void shouldHandleNullThriftStructTransformation() {
+    void shouldHandleNullThriftStructTransformation() throws Exception {
         org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(null);
         
         assertThat(result).isNull();
@@ -103,7 +103,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should transform empty Thrift struct to SDO")
-    void shouldTransformEmptyThriftStructToSDO() {
+    void shouldTransformEmptyThriftStructToSDO() throws Exception {
         TestDataGenerator.TestThriftStruct emptyStruct = TestDataGenerator.createEmptyThriftStruct();
         org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(emptyStruct);
         
@@ -113,7 +113,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should transform Thrift struct with null fields to SDO")
-    void shouldTransformThriftStructWithNullFieldsToSDO() {
+    void shouldTransformThriftStructWithNullFieldsToSDO() throws Exception {
         TestDataGenerator.TestThriftStruct nullStruct = TestDataGenerator.createNullThriftStruct();
         org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(nullStruct);
         
@@ -125,7 +125,7 @@ class ThriftToSDOTransformerTest {
     @DisplayName("Should handle transformation with different null handling strategies")
     @ParameterizedTest
     @ValueSource(strings = {"PRESERVE", "DEFAULT", "OMIT"})
-    void shouldHandleDifferentNullHandlingStrategies(String strategy, TestDataGenerator.TestThriftStruct thriftStruct) {
+    void shouldHandleDifferentNullHandlingStrategies(String strategy, TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.fromString(strategy));
         
@@ -147,7 +147,7 @@ class ThriftToSDOTransformerTest {
     @DisplayName("Should transform with different Thrift protocols")
     @ParameterizedTest
     @ValueSource(strings = {"BINARY", "COMPACT", "JSON"})
-    void shouldTransformWithDifferentThriftProtocols(String protocol, TestDataGenerator.TestThriftStruct thriftStruct) {
+    void shouldTransformWithDifferentThriftProtocols(String protocol, TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.fromString(protocol));
         
@@ -161,14 +161,14 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle complex nested structures")
-    void shouldHandleComplexNestedStructures() {
+    void shouldHandleComplexNestedStructures() throws Exception {
         TestDataGenerator.TestThriftStruct complexStruct = new TestDataGenerator.TestThriftStruct(
             999,
             "Complex Structure",
             true,
             100.0,
-            java.util.List.of("complex", "nested", "structure"),
-            java.util.Map.of("complex1", "value1", "complex2", "value2"),
+            java.util.Arrays.asList("complex", "nested", "structure"),
+            new java.util.HashMap<String, String>() {{ put("complex1", "value1"); put("complex2", "value2"); }},
             new TestDataGenerator.TestNestedStruct("complex", "complex description")
         );
         
@@ -180,14 +180,14 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle edge cases in transformation")
-    void shouldHandleEdgeCasesInTransformation() {
+    void shouldHandleEdgeCasesInTransformation() throws Exception {
         TestDataGenerator.TestThriftStruct edgeCaseStruct = new TestDataGenerator.TestThriftStruct(
             Integer.MAX_VALUE,
             "Edge Case Test",
             false,
             Double.MAX_VALUE,
-            java.util.List.of(),
-            java.util.Map.of(),
+            java.util.Arrays.asList(),
+            new java.util.HashMap<String, String>(),
             null
         );
         
@@ -199,7 +199,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should provide cache statistics")
-    void shouldProvideCacheStatistics() {
+    void shouldProvideCacheStatistics() throws Exception {
         Map<String, Integer> initialStats = transformer.getCacheStatistics();
         assertThat(initialStats.get("eclassCacheSize")).isEqualTo(0);
         
@@ -213,7 +213,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should clear caches successfully")
-    void shouldClearCachesSuccessfully() {
+    void shouldClearCachesSuccessfully() throws Exception {
         // Populate caches
         transformer.transformToSDO(TestDataGenerator.createTestThriftStruct());
         
@@ -229,7 +229,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle large collections efficiently")
-    void shouldHandleLargeCollectionsEfficiently() {
+    void shouldHandleLargeCollectionsEfficiently() throws Exception {
         // Create a struct with large collections
         java.util.List<String> largeList = new java.util.ArrayList<>();
         for (int i = 0; i < 1000; i++) {
@@ -261,15 +261,15 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle special characters in strings")
-    void shouldHandleSpecialCharactersInStrings() {
+    void shouldHandleSpecialCharactersInStrings() throws Exception {
         String specialChars = "Test with special chars: 你好世界 🌍 emoji test";
         TestDataGenerator.TestThriftStruct specialStruct = new TestDataGenerator.TestThriftStruct(
             1,
             specialChars,
             true,
             99.9,
-            java.util.List.of("special", "unicode", "emoji"),
-            java.util.Map.of("special_key", "special_value"),
+            java.util.Arrays.asList("special", "unicode", "emoji"),
+            new java.util.HashMap<String, String>() {{ put("special_key", "special_value"); }},
             null
         );
         
@@ -282,7 +282,7 @@ class ThriftToSDOTransformerTest {
     
     @Test
     @DisplayName("Should handle circular references gracefully")
-    void shouldHandleCircularReferencesGracefully() {
+    void shouldHandleCircularReferencesGracefully() throws Exception {
         // Create a circular reference scenario
         TestDataGenerator.TestNestedStruct nested1 = new TestDataGenerator.TestNestedStruct("nested1", "description1");
         TestDataGenerator.TestNestedStruct nested2 = new TestDataGenerator.TestNestedStruct("nested2", "description2");
@@ -294,8 +294,8 @@ class ThriftToSDOTransformerTest {
             "Circular Reference Test",
             true,
             75.0,
-            java.util.List.of(),
-            java.util.Map.of(),
+            java.util.Arrays.asList(),
+            new java.util.HashMap<String, String>(),
             null
         );
         
