@@ -2,6 +2,14 @@ package com.sdothrift.transformer;
 
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.util.TestDataGenerator;
+import com.sdothrift.util.TestSDOFixtures;
+import org.apache.thrift.TBase;
+import org.apache.thrift.meta_data.FieldMetaData;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TCompactProtocol;
+import org.apache.thrift.protocol.TJSONProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TIOStreamTransport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,6 +27,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.util.List;
+import java.util.Map;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -91,6 +103,16 @@ class ThriftToSDOTransformerTest {
         
         assertThat(result).isNotNull();
         assertThat(result.eClass().getName()).contains("TestThriftStruct");
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("active"))).isEqualTo(true);
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("score"))).isEqualTo(95.5d);
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("tags"))).asList().containsExactly("tag1", "tag2", "tag3");
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("properties"))).asList().hasSize(2);
+        org.eclipse.emf.ecore.sdo.EDataObject nested = (org.eclipse.emf.ecore.sdo.EDataObject)
+            result.eGet(result.eClass().getEStructuralFeature("nested"));
+        assertThat(nested.eGet(nested.eClass().getEStructuralFeature("value"))).isEqualTo("nested_value");
+        assertThat(nested.eGet(nested.eClass().getEStructuralFeature("description"))).isEqualTo("nested_description");
     }
     
     @Test
@@ -121,11 +143,10 @@ class ThriftToSDOTransformerTest {
         assertThat(result.eClass().getName()).contains("TestThriftStruct");
     }
     
-    @Test
     @DisplayName("Should handle transformation with different null handling strategies")
     @ParameterizedTest
     @ValueSource(strings = {"PRESERVE", "DEFAULT", "OMIT"})
-    void shouldHandleDifferentNullHandlingStrategies(String strategy, TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
+    void shouldHandleDifferentNullHandlingStrategies(String strategy) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.fromString(strategy));
         
@@ -143,16 +164,15 @@ class ThriftToSDOTransformerTest {
         }
     }
     
-    @Test
     @DisplayName("Should transform with different Thrift protocols")
     @ParameterizedTest
     @ValueSource(strings = {"BINARY", "COMPACT", "JSON"})
-    void shouldTransformWithDifferentThriftProtocols(String protocol, TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
+    void shouldTransformWithDifferentThriftProtocols(String protocol) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.fromString(protocol));
         
         transformer = new ThriftToSDOTransformer(config);
-        
+        TestDataGenerator.TestThriftStruct thriftStruct = TestDataGenerator.createTestThriftStruct();
         org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(thriftStruct);
         
         assertThat(result).isNotNull();
@@ -303,5 +323,84 @@ class ThriftToSDOTransformerTest {
         
         assertThat(result).isNotNull();
         // Verify that null nested is handled correctly
+    }
+
+    @Test
+    @DisplayName("Should round-trip all seven fields through Thrift and SDO")
+    void shouldRoundTripAllFieldsThroughThriftAndSDO() throws Exception {
+        TestDataGenerator.TestThriftStruct source = TestDataGenerator.createTestThriftStruct();
+        org.eclipse.emf.ecore.sdo.EDataObject sdo = transformer.transformToSDO(source);
+        TestDataGenerator.TestThriftStruct result = new SDOToThriftTransformer(
+            new ThriftSDOConfiguration()).transformToThrift(sdo, TestDataGenerator.TestThriftStruct.class);
+
+        assertThat(result).isEqualTo(source);
+        for (TestDataGenerator.TestThriftStruct._Fields field : TestDataGenerator.TestThriftStruct._Fields.values()) {
+            assertThat(result.isSet(field)).as("presence of %s", field.getFieldName()).isTrue();
+        }
+        assertThat(sdo.eIsSet(sdo.eClass().getEStructuralFeature("tags"))).isTrue();
+        assertThat(sdo.eIsSet(sdo.eClass().getEStructuralFeature("properties"))).isTrue();
+        assertThat(sdo.eIsSet(sdo.eClass().getEStructuralFeature("nested"))).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"BINARY", "COMPACT", "TJSON"})
+    @DisplayName("Should read and write actual Thrift wire protocols")
+    void shouldRoundTripProtocolBytes(String protocolName) throws Exception {
+        TestDataGenerator.TestThriftStruct source = TestDataGenerator.createTestThriftStruct();
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        TProtocol writer = protocol(protocolName, new TIOStreamTransport(bytes));
+        source.write(writer);
+        writer.getTransport().flush();
+
+        TestDataGenerator.TestThriftStruct result = new TestDataGenerator.TestThriftStruct();
+        TProtocol reader = protocol(protocolName, new TIOStreamTransport(new ByteArrayInputStream(bytes.toByteArray())));
+        result.read(reader);
+        assertThat(result).isEqualTo(source);
+        for (TestDataGenerator.TestThriftStruct._Fields field : TestDataGenerator.TestThriftStruct._Fields.values()) {
+            assertThat(result.isSet(field)).as("presence of %s", field.getFieldName()).isTrue();
+        }
+        assertThat(result.getNested()).isNotSameAs(source.getNested());
+    }
+
+    @Test
+    @DisplayName("Should distinguish empty and unset collection values")
+    void shouldDistinguishEmptyAndUnsetCollections() {
+        TestDataGenerator.TestThriftStruct empty = TestDataGenerator.createEmptyThriftStruct();
+        TestDataGenerator.TestThriftStruct unset = TestDataGenerator.createNullThriftStruct();
+        assertThat(empty.isSet(TestDataGenerator.TestThriftStruct._Fields.TAGS)).isTrue();
+        assertThat(empty.getTags()).isEmpty();
+        assertThat(empty.isSet(TestDataGenerator.TestThriftStruct._Fields.PROPERTIES)).isTrue();
+        assertThat(empty.getProperties()).isEmpty();
+        assertThat(unset.isSet(TestDataGenerator.TestThriftStruct._Fields.TAGS)).isFalse();
+        assertThat(unset.isSet(TestDataGenerator.TestThriftStruct._Fields.PROPERTIES)).isFalse();
+
+        org.eclipse.emf.ecore.sdo.EDataObject explicitEmpty = TestSDOFixtures.edge();
+        org.eclipse.emf.ecore.sdo.EDataObject absent = TestSDOFixtures.nullPolicy();
+        assertThat(explicitEmpty.eIsSet(explicitEmpty.eClass().getEStructuralFeature("tags"))).isTrue();
+        assertThat(((List<?>) explicitEmpty.eGet(explicitEmpty.eClass().getEStructuralFeature("tags")))).isEmpty();
+        assertThat(absent.eIsSet(absent.eClass().getEStructuralFeature("tags"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("Should preserve duplicate LIST values and enforce unique SET values")
+    void shouldPreserveListDuplicatesAndEnforceSetUniqueness() {
+        org.eclipse.emf.ecore.sdo.EDataObject collections = TestSDOFixtures.collectionContract();
+        assertThat((List<Object>) collections.eGet(collections.eClass().getEStructuralFeature("tags")))
+            .containsExactly("duplicate", "duplicate");
+        assertThat((List<Object>) collections.eGet(collections.eClass().getEStructuralFeature("uniqueTags")))
+            .containsExactly("duplicate");
+        assertThat(collections.eClass().getEStructuralFeature("tags").isUnique()).isFalse();
+        assertThat(collections.eClass().getEStructuralFeature("uniqueTags").isUnique()).isTrue();
+        assertThat(collections.eClass().getEStructuralFeature("properties").isMany()).isTrue();
+        assertThat(((org.eclipse.emf.ecore.EReference) collections.eClass().getEStructuralFeature("properties")).isContainment()).isTrue();
+    }
+
+    private static TProtocol protocol(String protocolName, org.apache.thrift.transport.TTransport transport) {
+        switch (protocolName) {
+            case "BINARY": return new TBinaryProtocol(transport);
+            case "COMPACT": return new TCompactProtocol(transport);
+            case "TJSON": return new TJSONProtocol(transport);
+            default: throw new IllegalArgumentException("Unknown protocol " + protocolName);
+        }
     }
 }

@@ -9,7 +9,13 @@ import org.apache.thrift.meta_data.FieldValueMetaData;
 import org.apache.thrift.meta_data.ListMetaData;
 import org.apache.thrift.meta_data.MapMetaData;
 import org.apache.thrift.meta_data.StructMetaData;
+import org.apache.thrift.protocol.TField;
+import org.apache.thrift.protocol.TList;
+import org.apache.thrift.protocol.TMap;
 import org.apache.thrift.protocol.TType;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.protocol.TProtocolException;
+import org.apache.thrift.protocol.TProtocolUtil;
 import org.eclipse.emf.ecore.EAttribute;
 import org.eclipse.emf.ecore.EClass;
 import org.eclipse.emf.ecore.EcoreFactory;
@@ -144,6 +150,7 @@ public class TestDataGenerator {
             tmpMap.put(_Fields.NESTED, nestedMetaData);
             
             metaDataMap = java.util.Collections.unmodifiableMap(tmpMap);
+            FieldMetaData.addStructMetaDataMap(TestThriftStruct.class, metaDataMap);
         }
         
         private int id;
@@ -153,42 +160,62 @@ public class TestDataGenerator {
         private List<String> tags;
         private Map<String, String> properties;
         private TestNestedStruct nested;
+        private boolean __isset_id;
+        private boolean __isset_active;
+        private boolean __isset_score;
         
         public TestThriftStruct() {
             this.id = 0;
-            this.name = "";
+            this.name = null;
             this.active = false;
             this.score = 0.0;
-            this.tags = new ArrayList<>();
-            this.properties = new HashMap<>();
+            this.tags = null;
+            this.properties = null;
             this.nested = null;
         }
         
         public TestThriftStruct(int id, String name, boolean active, double score, 
                              List<String> tags, Map<String, String> properties, TestNestedStruct nested) {
             this.id = id;
+            this.__isset_id = true;
             this.name = name;
             this.active = active;
+            this.__isset_active = true;
             this.score = score;
-            this.tags = tags != null ? new ArrayList<>(tags) : new ArrayList<>();
-            this.properties = properties != null ? new HashMap<>(properties) : new HashMap<>();
-            this.nested = nested;
+            this.__isset_score = true;
+            this.tags = tags != null ? new ArrayList<>(tags) : null;
+            this.properties = properties != null ? new HashMap<>(properties) : null;
+            this.nested = nested == null ? null : nested.deepCopy();
         }
         
         @Override
         public TestThriftStruct deepCopy() {
-            return new TestThriftStruct(id, name, active, score, tags, properties, nested);
+            TestThriftStruct copy = new TestThriftStruct();
+            copy.id = id;
+            copy.name = name;
+            copy.active = active;
+            copy.score = score;
+            copy.tags = tags == null ? null : new ArrayList<>(tags);
+            copy.properties = properties == null ? null : new HashMap<>(properties);
+            copy.nested = nested == null ? null : nested.deepCopy();
+            copy.__isset_id = __isset_id;
+            copy.__isset_active = __isset_active;
+            copy.__isset_score = __isset_score;
+            return copy;
         }
         
         @Override
         public void clear() {
             this.id = 0;
-            this.name = "";
+            this.name = null;
             this.active = false;
             this.score = 0.0;
-            this.tags = new ArrayList<>();
-            this.properties = new HashMap<>();
+            this.tags = null;
+            this.properties = null;
             this.nested = null;
+            this.__isset_id = false;
+            this.__isset_active = false;
+            this.__isset_score = false;
         }
         
         @Override
@@ -200,12 +227,12 @@ public class TestDataGenerator {
         public boolean isSet(_Fields field) {
             if (field == null) return false;
             switch (field) {
-                case ID: return true;
-                case NAME: return name != null && !name.isEmpty();
-                case ACTIVE: return true;
-                case SCORE: return true;
-                case TAGS: return tags != null && !tags.isEmpty();
-                case PROPERTIES: return properties != null && !properties.isEmpty();
+                case ID: return __isset_id;
+                case NAME: return name != null;
+                case ACTIVE: return __isset_active;
+                case SCORE: return __isset_score;
+                case TAGS: return tags != null;
+                case PROPERTIES: return properties != null;
                 case NESTED: return nested != null;
                 default: return false;
             }
@@ -228,10 +255,16 @@ public class TestDataGenerator {
         @Override
         public void setFieldValue(_Fields field, Object value) {
             switch (field) {
-                case ID: setId((Integer) value); break;
+                case ID:
+                    if (value == null) { id = 0; __isset_id = false; } else setId((Integer) value);
+                    break;
                 case NAME: setName((String) value); break;
-                case ACTIVE: setActive((Boolean) value); break;
-                case SCORE: setScore((Double) value); break;
+                case ACTIVE:
+                    if (value == null) { active = false; __isset_active = false; } else setActive((Boolean) value);
+                    break;
+                case SCORE:
+                    if (value == null) { score = 0.0; __isset_score = false; } else setScore((Double) value);
+                    break;
                 case TAGS: setTags((List<String>) value); break;
                 case PROPERTIES: setProperties((Map<String, String>) value); break;
                 case NESTED: setNested((TestNestedStruct) value); break;
@@ -240,23 +273,23 @@ public class TestDataGenerator {
         
         // Getters and setters
         public int getId() { return id; }
-        public void setId(int id) { this.id = id; }
+        public void setId(int id) { this.id = id; this.__isset_id = true; }
         
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
         
         public boolean isActive() { return active; }
-        public void setActive(boolean active) { this.active = active; }
+        public void setActive(boolean active) { this.active = active; this.__isset_active = true; }
         
         public double getScore() { return score; }
-        public void setScore(double score) { this.score = score; }
+        public void setScore(double score) { this.score = score; this.__isset_score = true; }
         
         public List<String> getTags() { return tags; }
-        public void setTags(List<String> tags) { this.tags = tags != null ? new ArrayList<>(tags) : new ArrayList<>(); }
+        public void setTags(List<String> tags) { this.tags = tags != null ? new ArrayList<>(tags) : null; }
         
         public Map<String, String> getProperties() { return properties; }
         public void setProperties(Map<String, String> properties) { 
-            this.properties = properties != null ? new HashMap<>(properties) : new HashMap<>(); 
+            this.properties = properties != null ? new HashMap<>(properties) : null; 
         }
         
         public TestNestedStruct getNested() { return nested; }
@@ -264,12 +297,97 @@ public class TestDataGenerator {
         
         @Override
         public void read(org.apache.thrift.protocol.TProtocol iprot) throws TException {
-            // Simplified implementation for testing
+            clear();
+            iprot.readStructBegin();
+            while (true) {
+                TField field = iprot.readFieldBegin();
+                if (field.type == TType.STOP) break;
+                switch (field.id) {
+                    case 1:
+                        if (field.type == TType.I32) setId(iprot.readI32());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 2:
+                        if (field.type == TType.STRING) setName(iprot.readString());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 3:
+                        if (field.type == TType.BOOL) setActive(iprot.readBool());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 4:
+                        if (field.type == TType.DOUBLE) setScore(iprot.readDouble());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 5:
+                        if (field.type == TType.LIST) {
+                            TList list = iprot.readListBegin();
+                            List<String> readTags = new ArrayList<>(list.size);
+                            for (int i = 0; i < list.size; i++) {
+                                if (list.elemType == TType.STRING) readTags.add(iprot.readString());
+                                else { TProtocolUtil.skip(iprot, list.elemType); readTags.add(null); }
+                            }
+                            iprot.readListEnd();
+                            setTags(readTags);
+                        } else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 6:
+                        if (field.type == TType.MAP) {
+                            TMap map = iprot.readMapBegin();
+                            Map<String, String> readProperties = new HashMap<>();
+                            for (int i = 0; i < map.size; i++) {
+                                String key = null;
+                                String value = null;
+                                if (map.keyType == TType.STRING) key = iprot.readString();
+                                else TProtocolUtil.skip(iprot, map.keyType);
+                                if (map.valueType == TType.STRING) value = iprot.readString();
+                                else TProtocolUtil.skip(iprot, map.valueType);
+                                readProperties.put(key, value);
+                            }
+                            iprot.readMapEnd();
+                            setProperties(readProperties);
+                        } else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 7:
+                        if (field.type == TType.STRUCT) {
+                            TestNestedStruct readNested = new TestNestedStruct();
+                            readNested.read(iprot);
+                            setNested(readNested);
+                        } else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    default:
+                        TProtocolUtil.skip(iprot, field.type);
+                }
+                iprot.readFieldEnd();
+            }
+            iprot.readStructEnd();
+            if (!__isset_id || name == null || !__isset_active || !__isset_score) {
+                throw new TProtocolException(TProtocolException.INVALID_DATA, "Required TestThriftStruct field missing");
+            }
         }
         
         @Override
         public void write(org.apache.thrift.protocol.TProtocol oprot) throws TException {
-            // Simplified implementation for testing
+            oprot.writeStructBegin(new org.apache.thrift.protocol.TStruct("TestThriftStruct"));
+            if (isSet(_Fields.ID)) { oprot.writeFieldBegin(new TField("id", TType.I32, (short) 1)); oprot.writeI32(id); oprot.writeFieldEnd(); }
+            if (isSet(_Fields.NAME)) { oprot.writeFieldBegin(new TField("name", TType.STRING, (short) 2)); oprot.writeString(name); oprot.writeFieldEnd(); }
+            if (isSet(_Fields.ACTIVE)) { oprot.writeFieldBegin(new TField("active", TType.BOOL, (short) 3)); oprot.writeBool(active); oprot.writeFieldEnd(); }
+            if (isSet(_Fields.SCORE)) { oprot.writeFieldBegin(new TField("score", TType.DOUBLE, (short) 4)); oprot.writeDouble(score); oprot.writeFieldEnd(); }
+            if (isSet(_Fields.TAGS)) {
+                oprot.writeFieldBegin(new TField("tags", TType.LIST, (short) 5));
+                oprot.writeListBegin(new TList(TType.STRING, tags.size()));
+                for (String tag : tags) oprot.writeString(tag);
+                oprot.writeListEnd(); oprot.writeFieldEnd();
+            }
+            if (isSet(_Fields.PROPERTIES)) {
+                oprot.writeFieldBegin(new TField("properties", TType.MAP, (short) 6));
+                oprot.writeMapBegin(new TMap(TType.STRING, TType.STRING, properties.size()));
+                for (Map.Entry<String, String> entry : properties.entrySet()) { oprot.writeString(entry.getKey()); oprot.writeString(entry.getValue()); }
+                oprot.writeMapEnd(); oprot.writeFieldEnd();
+            }
+            if (isSet(_Fields.NESTED)) { oprot.writeFieldBegin(new TField("nested", TType.STRUCT, (short) 7)); nested.write(oprot); oprot.writeFieldEnd(); }
+            oprot.writeFieldStop();
+            oprot.writeStructEnd();
         }
         
         @Override
@@ -373,14 +491,15 @@ return java.util.Objects.hash(id, name, active, score, tags, properties, nested)
             tmpMap.put(_Fields.DESCRIPTION, descriptionMetaData);
             
             metaDataMap = java.util.Collections.unmodifiableMap(tmpMap);
+            FieldMetaData.addStructMetaDataMap(TestNestedStruct.class, metaDataMap);
         }
         
         private String value;
         private String description;
         
         public TestNestedStruct() {
-            this.value = "";
-            this.description = "";
+            this.value = null;
+            this.description = null;
         }
         
         public TestNestedStruct(String value, String description) {
@@ -408,8 +527,8 @@ return java.util.Objects.hash(id, name, active, score, tags, properties, nested)
         public boolean isSet(_Fields field) {
             if (field == null) return false;
             switch (field) {
-                case VALUE: return value != null && !value.isEmpty();
-                case DESCRIPTION: return description != null && !description.isEmpty();
+                case VALUE: return value != null;
+                case DESCRIPTION: return description != null;
                 default: return false;
             }
         }
@@ -439,12 +558,38 @@ return java.util.Objects.hash(id, name, active, score, tags, properties, nested)
         
         @Override
         public void read(org.apache.thrift.protocol.TProtocol iprot) throws TException {
-            // Simplified implementation for testing
+            clear();
+            iprot.readStructBegin();
+            while (true) {
+                TField field = iprot.readFieldBegin();
+                if (field.type == TType.STOP) break;
+                switch (field.id) {
+                    case 1:
+                        if (field.type == TType.STRING) setValue(iprot.readString());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    case 2:
+                        if (field.type == TType.STRING) setDescription(iprot.readString());
+                        else TProtocolUtil.skip(iprot, field.type);
+                        break;
+                    default:
+                        TProtocolUtil.skip(iprot, field.type);
+                }
+                iprot.readFieldEnd();
+            }
+            iprot.readStructEnd();
+            if (value == null || description == null) {
+                throw new TProtocolException(TProtocolException.INVALID_DATA, "Required TestNestedStruct field missing");
+            }
         }
         
         @Override
         public void write(org.apache.thrift.protocol.TProtocol oprot) throws TException {
-            // Simplified implementation for testing
+            oprot.writeStructBegin(new org.apache.thrift.protocol.TStruct("TestNestedStruct"));
+            if (isSet(_Fields.VALUE)) { oprot.writeFieldBegin(new TField("value", TType.STRING, (short) 1)); oprot.writeString(value); oprot.writeFieldEnd(); }
+            if (isSet(_Fields.DESCRIPTION)) { oprot.writeFieldBegin(new TField("description", TType.STRING, (short) 2)); oprot.writeString(description); oprot.writeFieldEnd(); }
+            oprot.writeFieldStop();
+            oprot.writeStructEnd();
         }
         
         @Override

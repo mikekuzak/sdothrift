@@ -109,7 +109,7 @@ class TypeMapperTest {
         assertThat(TypeMapper.convertValue(123, Long.class)).isEqualTo(123L);
         assertThat(TypeMapper.convertValue(123L, Integer.class)).isEqualTo(123);
         assertThat(TypeMapper.convertValue(3.14, Double.class)).isEqualTo(3.14);
-        assertThat(TypeMapper.convertValue(3.14f, Double.class)).isEqualTo(3.14d);
+        assertThat(TypeMapper.convertValue(3.14f, Double.class)).isEqualTo((double) 3.14f);
         
         // Test string conversions
         assertThat(TypeMapper.convertValue("123", Integer.class)).isEqualTo(123);

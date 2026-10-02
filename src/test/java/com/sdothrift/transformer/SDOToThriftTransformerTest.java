@@ -2,6 +2,7 @@ package com.sdothrift.transformer;
 
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.util.TestDataGenerator;
+import com.sdothrift.util.TestSDOFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,9 +39,7 @@ class SDOToThriftTransformerTest {
         @Override
         public boolean supportsParameter(ParameterContext parameterContext, 
                                            ExtensionContext extensionContext) {
-            return parameterContext.getParameter().getType().equals(ThriftSDOConfiguration.class) ||
-                   parameterContext.getParameter().getType().equals(String.class) ||
-                   parameterContext.getParameter().getType().equals(Class.class);
+            return parameterContext.getParameter().getType().equals(ThriftSDOConfiguration.class);
         }
         
         @Override
@@ -50,14 +49,6 @@ class SDOToThriftTransformerTest {
             
             if (parameterContext.getParameter().getType().equals(ThriftSDOConfiguration.class)) {
                 return createTestConfiguration();
-            }
-            
-            if (parameterContext.getParameter().getType().equals(String.class)) {
-                return TestDataGenerator.createTestThriftJson();
-            }
-            
-            if (parameterContext.getParameter().getType().equals(Class.class)) {
-                return TestDataGenerator.TestThriftStruct.class;
             }
             
             return null;
@@ -120,6 +111,12 @@ class SDOToThriftTransformerTest {
         boolean isValid = transformer.validateTransformation(sdoObject, TestDataGenerator.TestThriftStruct.class);
         
         assertThat(isValid).isTrue();
+        
+        // Required fields are matched BY NAME: a fixture with every required field set
+        // but every optional field deliberately absent must still validate.
+        assertThat(transformer.validateTransformation(TestSDOFixtures.nullPolicy(), TestDataGenerator.TestThriftStruct.class))
+            .as("unset optional fields must not fail validation")
+            .isTrue();
     }
     
     @Test
@@ -133,7 +130,6 @@ class SDOToThriftTransformerTest {
         assertThat(isValid).isFalse();
     }
     
-    @Test
     @DisplayName("Should handle different null handling strategies")
     @ParameterizedTest
     @ValueSource(strings = {"PRESERVE", "DEFAULT", "OMIT", "ERROR"})
@@ -143,34 +139,52 @@ class SDOToThriftTransformerTest {
         
         transformer = new SDOToThriftTransformer(config);
         
-        org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createTestSDOWithNulls();
-        
-        TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
-        
-        assertThat(result).isNotNull();
-        
-        // Verify null handling behavior
+        org.eclipse.emf.ecore.sdo.EDataObject sdoObject = TestSDOFixtures.nullPolicy();
+
         if ("ERROR".equals(strategy)) {
-            // This should throw an exception during transformation
-            // The exact behavior depends on implementation details
+            // The unset optional field that trips ERROR depends on metadata iteration
+            // order, so assert the field-null domain message without pinning the name.
+            assertThatThrownBy(() -> transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class))
+                .getRootCause()
+                .hasMessageContaining("Null value encountered for field:");
+            return;
+        }
+
+        TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(123);
+        assertThat(result.getName()).isEqualTo("Test Structure");
+        if ("DEFAULT".equals(strategy)) {
+            assertThat(result.isSet(TestDataGenerator.TestThriftStruct._Fields.TAGS)).isTrue();
+            assertThat(result.getTags()).isEmpty();
+            assertThat(result.isSet(TestDataGenerator.TestThriftStruct._Fields.PROPERTIES)).isTrue();
+            assertThat(result.getProperties()).isEmpty();
+        } else {
+            assertThat(result.isSet(TestDataGenerator.TestThriftStruct._Fields.TAGS)).isFalse();
+            assertThat(result.isSet(TestDataGenerator.TestThriftStruct._Fields.PROPERTIES)).isFalse();
         }
     }
     
-    @Test
     @DisplayName("Should handle different Thrift protocols")
     @ParameterizedTest
     @ValueSource(strings = {"BINARY", "COMPACT", "JSON"})
-    void shouldHandleDifferentThriftProtocols(String protocol, org.eclipse.emf.ecore.sdo.EDataObject sdoObject) throws Exception {
+    void shouldHandleDifferentThriftProtocols(String protocol) throws Exception {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
         config.setThriftProtocol(ThriftSDOConfiguration.ThriftProtocol.fromString(protocol));
         
         transformer = new SDOToThriftTransformer(config);
         
+        org.eclipse.emf.ecore.sdo.EDataObject sdoObject = TestSDOFixtures.basic();
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
         
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo(123);
         assertThat(result.getName()).isEqualTo("Test Structure");
+        assertThat(result.isActive()).isTrue();
+        assertThat(result.getScore()).isEqualTo(95.5);
+        assertThat(result.getTags()).containsExactly("tag1", "tag2", "tag3");
+        assertThat(result.getProperties()).containsEntry("key1", "value1").containsEntry("key2", "value2");
+        assertThat(result.getNested().getValue()).isEqualTo("nested_value");
     }
     
     @Test
@@ -209,9 +223,10 @@ class SDOToThriftTransformerTest {
         assertThat(initialStats.get("constructorCacheSize")).isEqualTo(0);
         assertThat(initialStats.get("fieldMetaDataCacheSize")).isEqualTo(0);
         
-        // Perform some transformations to populate cache
-        transformer.transformToThrift(createTestSDOFromTestData(), TestDataGenerator.TestThriftStruct.class);
-        transformer.transformToThrift(createComplexTestSDO(), TestDataGenerator.TestThriftStruct.class);
+        // Populate the two caches independently: constructor lookup is lazy and metadata lookup
+        // occurs only when a transformation starts.
+        transformer.transformToThrift(TestSDOFixtures.basic(), TestDataGenerator.TestThriftStruct.class);
+        transformer.transformToThrift(TestSDOFixtures.complex(), TestDataGenerator.TestThriftStruct.class);
         
         Map<String, Integer> finalStats = transformer.getCacheStatistics();
         assertThat(finalStats.get("constructorCacheSize")).isGreaterThan(0);
@@ -222,7 +237,7 @@ class SDOToThriftTransformerTest {
     @DisplayName("Should clear caches successfully")
     void shouldClearCachesSuccessfully() throws Exception {
         // Populate caches
-        transformer.transformToThrift(createTestSDOFromTestData(), TestDataGenerator.TestThriftStruct.class);
+        transformer.transformToThrift(TestSDOFixtures.basic(), TestDataGenerator.TestThriftStruct.class);
         
         Map<String, Integer> statsBefore = transformer.getCacheStatistics();
         assertThat(statsBefore.get("constructorCacheSize")).isGreaterThan(0);
@@ -238,7 +253,7 @@ class SDOToThriftTransformerTest {
     @Test
     @DisplayName("Should handle large objects efficiently")
     void shouldHandleLargeObjectsEfficiently() throws Exception {
-        org.eclipse.emf.ecore.sdo.EDataObject largeSDO = createLargeTestSDO();
+        org.eclipse.emf.ecore.sdo.EDataObject largeSDO = TestSDOFixtures.large();
         
         long startTime = System.currentTimeMillis();
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(largeSDO, TestDataGenerator.TestThriftStruct.class);
@@ -252,7 +267,7 @@ class SDOToThriftTransformerTest {
     @DisplayName("Should handle special characters in strings")
     void shouldHandleSpecialCharactersInStrings() throws Exception {
         String specialChars = "Test with special chars: 你好世界 🌍 emoji test";
-        org.eclipse.emf.ecore.sdo.EDataObject sdoObject = createSDOWithSpecialCharacters(specialChars);
+        org.eclipse.emf.ecore.sdo.EDataObject sdoObject = TestSDOFixtures.specialCharacters(specialChars);
         
         TestDataGenerator.TestThriftStruct result = transformer.transformToThrift(sdoObject, TestDataGenerator.TestThriftStruct.class);
         
@@ -265,115 +280,48 @@ class SDOToThriftTransformerTest {
      * Creates a test SDO DataObject from test data.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createTestSDOFromTestData() {
-        // This would require creating an actual SDO with proper EClass
-        // For now, return a mock SDO object
-        return createMockSDO("TestStruct");
+        return TestSDOFixtures.basic();
     }
     
     /**
      * Creates an invalid SDO DataObject for testing validation.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createInvalidSDO() {
-        return createMockSDO("InvalidStruct");
+        return TestSDOFixtures.invalidMissingRequired();
     }
     
     /**
      * Creates a test SDO with null values.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createTestSDOWithNulls() {
-        return createMockSDO("NullStruct");
+        return TestSDOFixtures.nullPolicy();
     }
     
     /**
      * Creates a complex test SDO with nested structures.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createComplexTestSDO() {
-        return createMockSDO("ComplexStruct");
+        return TestSDOFixtures.complex();
     }
     
     /**
      * Creates an edge case test SDO.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createEdgeCaseTestSDO() {
-        return createMockSDO("EdgeCaseStruct");
+        return TestSDOFixtures.edge();
     }
     
     /**
      * Creates a large test SDO.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createLargeTestSDO() {
-        return createMockSDO("LargeStruct");
+        return TestSDOFixtures.large();
     }
     
     /**
      * Creates an SDO with special characters.
      */
     private org.eclipse.emf.ecore.sdo.EDataObject createSDOWithSpecialCharacters(String specialChars) {
-        return createMockSDO("SpecialCharsStruct");
-    }
-    
-    /**
-     * Creates a mock SDO object for testing.
-     * This is a simplified implementation - in a real scenario, you'd use actual SDO factories.
-     */
-    private org.eclipse.emf.ecore.sdo.EDataObject createMockSDO(String name) {
-        return new org.eclipse.emf.ecore.sdo.EDataObject() {
-            @Override
-            public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.impl.EClassImpl() {
-                    @Override
-                    public String getName() {
-                        return name;
-                    }
-                    
-                    @Override
-                    public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
-                            @Override
-                            public String getName() {
-                                return "test.package";
-                            }
-                        };
-                    }
-                };
-            }
-            
-            @Override
-            public Object eGet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                // Return test data based on feature name
-                switch (feature.getName()) {
-                    case "id":
-                        return 123;
-                    case "name":
-                        return "Test Structure";
-                    case "active":
-                        return true;
-                    case "score":
-                        return 95.5;
-                    case "tags":
-                        return java.util.Arrays.asList("tag1", "tag2", "tag3");
-                    case "properties":
-                        java.util.Map<String, String> props = new java.util.HashMap<>();
-                        props.put("key1", "value1");
-                        props.put("key2", "value2");
-                        return props;
-                    case "nested":
-                        return new TestDataGenerator.TestNestedStruct("nested_value", "nested_description");
-                    default:
-                        return null;
-                }
-            }
-            
-            @Override
-            public void eSet(org.eclipse.emf.ecore.EStructuralFeature feature, Object newValue) {
-                // Mock implementation - would set internal state
-            }
-            
-            @Override
-            public boolean eIsSet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                // Mock implementation - return true for most features
-                return !"nested".equals(feature.getName());
-            }
-        };
+        return TestSDOFixtures.specialCharacters(specialChars);
     }
 }

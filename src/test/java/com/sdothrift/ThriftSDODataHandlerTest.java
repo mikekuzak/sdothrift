@@ -2,9 +2,8 @@ package com.sdothrift;
 
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.util.TestDataGenerator;
-import com.sdothrift.util.TestFailureAnalyzer;
+import com.sdothrift.util.TestSDOFixtures;
 import commonj.connector.runtime.DataHandlerException;
-import org.apache.thrift.TBase;
 import org.eclipse.emf.ecore.sdo.EDataObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +14,6 @@ import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.TestInstancePostProcessor;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -24,8 +22,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
@@ -43,6 +42,7 @@ class ThriftSDODataHandlerTest {
     
     /**
      * Custom parameter resolver for test parameters.
+     * Resolves ONLY ThriftSDOConfiguration; JUnit owns every other parameter.
      */
     static class ConfigurationParameterResolver implements ParameterResolver, TestInstancePostProcessor {
         
@@ -96,6 +96,9 @@ class ThriftSDODataHandlerTest {
         bindingContext.put("null.handling.strategy", this.configuration.getNullHandlingStrategy().getStrategyName());
         bindingContext.put("performance.caching.enabled", this.configuration.isPerformanceCachingEnabled());
         bindingContext.put("strict.validation.enabled", this.configuration.isStrictValidationEnabled());
+        // Untyped JSON cannot identify a Java Thrift class: positive JSON->SDO tests
+        // supply the schema class through the binding context.
+        bindingContext.put("thrift.target.class", TestDataGenerator.TestThriftStruct.class);
         
         this.dataHandler.setBindingContext(bindingContext);
     }
@@ -111,12 +114,26 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform Thrift object to SDO")
-    void shouldTransformThriftObjectToSDO(TestDataGenerator.TestThriftStruct thriftStruct) throws Exception {
+    void shouldTransformThriftObjectToSDO() throws Exception {
+        TestDataGenerator.TestThriftStruct thriftStruct = TestDataGenerator.createTestThriftStruct();
         try {
             Object result = dataHandler.transform(thriftStruct, EDataObject.class, null);
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(EDataObject.class);
+            
+            // Forward mapping must carry real values, not just succeed.
+            EDataObject sdo = (EDataObject) result;
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("active"))).isEqualTo(true);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("score"))).isEqualTo(95.5);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("tags")))
+                .asList().containsExactly("tag1", "tag2", "tag3");
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("properties"))).asList().hasSize(2);
+            EDataObject nested = (EDataObject) sdo.eGet(sdo.eClass().getEStructuralFeature("nested"));
+            assertThat(nested.eGet(nested.eClass().getEStructuralFeature("value"))).isEqualTo("nested_value");
+            assertThat(nested.eGet(nested.eClass().getEStructuralFeature("description"))).isEqualTo("nested_description");
         } catch (DataHandlerException e) {
             fail("Transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -124,7 +141,8 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform SDO object to Thrift")
-    void shouldTransformSDOObjectToThrift(EDataObject sdoObject) throws Exception {
+    void shouldTransformSDOObjectToThrift() throws Exception {
+        EDataObject sdoObject = TestSDOFixtures.basic();
         try {
             Object result = dataHandler.transform(sdoObject, TestDataGenerator.TestThriftStruct.class, null);
             
@@ -134,6 +152,8 @@ class ThriftSDODataHandlerTest {
             TestDataGenerator.TestThriftStruct thriftResult = (TestDataGenerator.TestThriftStruct) result;
             assertThat(thriftResult.getId()).isEqualTo(123);
             assertThat(thriftResult.getName()).isEqualTo("Test Structure");
+            assertThat(thriftResult.isActive()).isTrue();
+            assertThat(thriftResult.getScore()).isEqualTo(95.5);
         } catch (DataHandlerException e) {
             fail("Transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -141,12 +161,27 @@ class ThriftSDODataHandlerTest {
     
     @Test
     @DisplayName("Should transform JSON string to Thrift")
-    void shouldTransformJsonStringToThrift(String jsonInput) throws Exception {
+    void shouldTransformJsonStringToThrift() throws Exception {
+        String jsonInput = TestDataGenerator.createTestThriftJson();
         try {
             Object result = dataHandler.transform(jsonInput, TestDataGenerator.TestThriftStruct.class, null);
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(TestDataGenerator.TestThriftStruct.class);
+            
+            // Field-name JSON must decode to exact values for all seven fields.
+            TestDataGenerator.TestThriftStruct thriftResult = (TestDataGenerator.TestThriftStruct) result;
+            assertThat(thriftResult.getId()).isEqualTo(123);
+            assertThat(thriftResult.getName()).isEqualTo("Test Structure");
+            assertThat(thriftResult.isActive()).isTrue();
+            assertThat(thriftResult.getScore()).isEqualTo(95.5);
+            assertThat(thriftResult.getTags()).containsExactly("tag1", "tag2", "tag3");
+            assertThat(thriftResult.getProperties())
+                .containsEntry("key1", "value1")
+                .containsEntry("key2", "value2");
+            assertThat(thriftResult.getNested()).isNotNull();
+            assertThat(thriftResult.getNested().getValue()).isEqualTo("nested_value");
+            assertThat(thriftResult.getNested().getDescription()).isEqualTo("nested_description");
         } catch (DataHandlerException e) {
             fail("JSON transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -160,22 +195,54 @@ class ThriftSDODataHandlerTest {
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(EDataObject.class);
+            
+            // JSON -> Thrift -> SDO must preserve exact values.
+            EDataObject sdo = (EDataObject) result;
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("active"))).isEqualTo(true);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("score"))).isEqualTo(95.5);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("tags")))
+                .asList().containsExactly("tag1", "tag2", "tag3");
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("properties"))).asList().hasSize(2);
+            EDataObject nested = (EDataObject) sdo.eGet(sdo.eClass().getEStructuralFeature("nested"));
+            assertThat(nested.eGet(nested.eClass().getEStructuralFeature("value"))).isEqualTo("nested_value");
+            assertThat(nested.eGet(nested.eClass().getEStructuralFeature("description"))).isEqualTo("nested_description");
         } catch (DataHandlerException e) {
             fail("Thrift JSON to SDO transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
     }
     
     @Test
+    @DisplayName("Should fail JSON to SDO when class metadata is absent")
+    void shouldFailJsonToSDOWithoutClassMetadata() throws Exception {
+        // A handler whose binding context carries no thrift.target.class must report
+        // a configuration error instead of guessing the Thrift class from field names.
+        ThriftSDOConfiguration bareConfig = new ThriftSDOConfiguration();
+        bareConfig.setNullHandlingStrategy(ThriftSDOConfiguration.NullHandlingStrategy.PRESERVE);
+        ThriftSDODataHandler bareHandler = new ThriftSDODataHandler(bareConfig);
+        bareHandler.setBindingContext(new HashMap<>());
+        
+        assertThatThrownBy(() -> bareHandler.transform(TestDataGenerator.createTestThriftJson(), EDataObject.class, null))
+            .isInstanceOf(DataHandlerException.class)
+            .hasMessageContaining("Cannot determine Thrift class");
+    }
+    
+    @Test
     @DisplayName("Should handle InputStream input correctly")
     void shouldHandleInputStreamInput() throws IOException {
         String testContent = TestDataGenerator.createTestThriftJson();
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(testContent.getBytes());
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(testContent.getBytes(StandardCharsets.UTF_8));
         
         try {
             Object result = dataHandler.transform(inputStream, EDataObject.class, null);
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(EDataObject.class);
+            
+            EDataObject sdo = (EDataObject) result;
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
         } catch (DataHandlerException e) {
             fail("InputStream transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -185,13 +252,17 @@ class ThriftSDODataHandlerTest {
     @DisplayName("Should handle byte array input correctly")
     void shouldHandleByteArrayInput() throws Exception {
         String testContent = TestDataGenerator.createTestThriftJson();
-        byte[] byteArray = testContent.getBytes();
+        byte[] byteArray = testContent.getBytes(StandardCharsets.UTF_8);
         
         try {
             Object result = dataHandler.transform(byteArray, EDataObject.class, null);
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(EDataObject.class);
+            
+            EDataObject sdo = (EDataObject) result;
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
         } catch (DataHandlerException e) {
             fail("Byte array transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -208,9 +279,27 @@ class ThriftSDODataHandlerTest {
             
             assertThat(result).isNotNull();
             assertThat(result).isInstanceOf(EDataObject.class);
+            
+            EDataObject sdo = (EDataObject) result;
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+            assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
         } catch (DataHandlerException e) {
             fail("Reader transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
+    }
+    
+    @Test
+    @DisplayName("Should reject invalid numeric JSON values")
+    void shouldRejectInvalidNumericJson() throws Exception {
+        String invalidNumericJson = "{"
+            + "\"id\": \"not-a-number\","
+            + "\"name\": \"Bad Numeric\","
+            + "\"active\": true,"
+            + "\"score\": 1.0"
+            + "}";
+        
+        assertThatThrownBy(() -> dataHandler.transform(invalidNumericJson, TestDataGenerator.TestThriftStruct.class, null))
+            .isInstanceOf(DataHandlerException.class);
     }
     
     @Test
@@ -307,14 +396,24 @@ class ThriftSDODataHandlerTest {
     @Test
     @DisplayName("Should handle transformInto correctly")
     void shouldHandleTransformIntoCorrectly() throws Exception {
-        EDataObject sourceSDO = createTestSDOObject();
+        EDataObject sourceSDO = TestSDOFixtures.basic();
         TestDataGenerator.TestThriftStruct targetThrift = new TestDataGenerator.TestThriftStruct();
         
         try {
             dataHandler.transformInto(sourceSDO, targetThrift, null);
             
-            // For now, just verify no exception is thrown
-            // In a real implementation, targetThrift should be populated
+            // transformInto must actually populate the target via Thrift metadata.
+            assertThat(targetThrift.getId()).isEqualTo(123);
+            assertThat(targetThrift.getName()).isEqualTo("Test Structure");
+            assertThat(targetThrift.isActive()).isTrue();
+            assertThat(targetThrift.getScore()).isEqualTo(95.5);
+            assertThat(targetThrift.getTags()).containsExactly("tag1", "tag2", "tag3");
+            assertThat(targetThrift.getProperties())
+                .containsEntry("key1", "value1")
+                .containsEntry("key2", "value2");
+            assertThat(targetThrift.getNested()).isNotNull();
+            assertThat(targetThrift.getNested().getValue()).isEqualTo("nested_value");
+            assertThat(targetThrift.getNested().getDescription()).isEqualTo("nested_description");
         } catch (DataHandlerException e) {
             fail("transformInto should not throw DataHandlerException: " + e.getMessage(), e);
         }
@@ -330,14 +429,18 @@ class ThriftSDODataHandlerTest {
         Map<String, Object> bindingContext = new HashMap<>();
         dataHandler.setBindingContext(bindingContext);
         
-        EDataObject nullSDO = createNullSDOObject();
+        // A real schema whose fields are all unset (not a featureless mock).
+        EDataObject nullSDO = TestSDOFixtures.allUnset();
         TestDataGenerator.TestThriftStruct targetThrift = new TestDataGenerator.TestThriftStruct();
         
         try {
             dataHandler.transformInto(nullSDO, targetThrift, null);
             fail("Should throw DataHandlerException for null SDO with ERROR strategy in transformInto");
         } catch (DataHandlerException e) {
-            assertThat(e.getMessage()).contains("Null input encountered");
+            // The field-null ERROR domain message must survive the transformer and
+            // handler wrapping layers. The specific field depends on metadata
+            // iteration order, so only the message prefix is pinned.
+            assertThat(e).getRootCause().hasMessageContaining("Null value encountered for field:");
         }
     }
     
@@ -438,114 +541,6 @@ class ThriftSDODataHandlerTest {
                 assertThat(e.getMessage()).doesNotContain("Unsupported transformation");
             }
         }
-    }
-    
-    /**
-     * Creates a test SDO DataObject for testing.
-     */
-    private EDataObject createTestSDOObject() {
-        // This would require creating an actual SDO with proper EClass
-        // For now, return a mock SDO object
-        return new EDataObject() {
-            @Override
-            public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.impl.EClassImpl() {
-                    @Override
-                    public String getName() {
-                        return "TestStruct";
-                    }
-                    
-                    @Override
-                    public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
-                            @Override
-                            public String getName() {
-                                return "test.package";
-                            }
-                        };
-                    }
-                };
-            }
-            
-            @Override
-            public Object eGet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                // Return test data based on feature name
-                switch (feature.getName()) {
-                    case "id":
-                        return 123;
-                    case "name":
-                        return "Test Structure";
-                    case "active":
-                        return true;
-                    case "score":
-                        return 95.5;
-                    case "tags":
-                        return java.util.Arrays.asList("tag1", "tag2", "tag3");
-                    case "properties":
-                        java.util.Map<String, String> props = new java.util.HashMap<>();
-                        props.put("key1", "value1");
-                        props.put("key2", "value2");
-                        return props;
-                    case "nested":
-                        return new TestDataGenerator.TestNestedStruct("nested_value", "nested_description");
-                    default:
-                        return null;
-                }
-            }
-            
-            @Override
-            public void eSet(org.eclipse.emf.ecore.EStructuralFeature feature, Object newValue) {
-                // Mock implementation - would set internal state
-            }
-            
-            @Override
-            public boolean eIsSet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                // Mock implementation - return true for most features
-                return !"nested".equals(feature.getName());
-            }
-        };
-    }
-    
-    /**
-     * Creates a null SDO DataObject for testing.
-     */
-    private EDataObject createNullSDOObject() {
-        return new EDataObject() {
-            @Override
-            public org.eclipse.emf.ecore.EClass eClass() {
-                return new org.eclipse.emf.ecore.impl.EClassImpl() {
-                    @Override
-                    public String getName() {
-                        return "NullStruct";
-                    }
-                    
-                    @Override
-                    public org.eclipse.emf.ecore.EPackage getEPackage() {
-                        return new org.eclipse.emf.ecore.impl.EPackageImpl() {
-                            @Override
-                            public String getName() {
-                                return "test.package";
-                            }
-                        };
-                    }
-                };
-            }
-            
-            @Override
-            public Object eGet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                return null; // All fields are null
-            }
-            
-            @Override
-            public void eSet(org.eclipse.emf.ecore.EStructuralFeature feature, Object newValue) {
-                // Mock implementation
-            }
-            
-            @Override
-            public boolean eIsSet(org.eclipse.emf.ecore.EStructuralFeature feature) {
-                return false; // No fields are set
-            }
-        };
     }
     
     /**
