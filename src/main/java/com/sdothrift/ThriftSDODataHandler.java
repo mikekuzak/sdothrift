@@ -6,6 +6,8 @@ import com.sdothrift.transformer.SDOToThriftTransformer;
 import com.sdothrift.transformer.ThriftToSDOTransformer;
 import com.sdothrift.serializer.ThriftSerializer;
 import org.apache.thrift.TBase;
+import org.apache.thrift.TFieldIdEnum;
+import org.apache.thrift.meta_data.FieldMetaData;
 import org.eclipse.emf.ecore.sdo.EDataObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -74,10 +77,18 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @throws commonj.connector.runtime.DataHandlerException if transformation fails
      */
     @Override
-    public Object transform(Object source, Class<?> targetClass, Object options) 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public Object transform(Object source, Class targetClass, Object options) 
             throws commonj.connector.runtime.DataHandlerException {
         
         try {
+            if (targetClass == null) {
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.VALIDATION_ERROR,
+                    "Target class cannot be null",
+                    "A target class is required for transformation"
+                );
+            }
             if (logger.isDebugEnabled()) {
                 logger.debug("Transforming source {} to target {}", 
                     source != null ? source.getClass().getName() : "null",
@@ -86,14 +97,16 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
             
             // Handle null input
             if (source == null) {
-                return handleNullInput(targetClass);
+                return handleNullInput(targetClass, options);
             }
             
             // Convert input to appropriate format for processing
-            Object processedSource = preprocessInput(source);
+            Object processedSource = preprocessInput(source, targetClass);
             
             // Determine transformation direction
-            if (isThriftToSDOTransformation(processedSource, targetClass)) {
+            if (isStringToThriftTransformation(processedSource, targetClass)) {
+                return thriftSerializer.deserializeFromString((String) processedSource, (Class<? extends TBase>) targetClass);
+            } else if (isThriftToSDOTransformation(processedSource, targetClass)) {
                 return transformThriftToSDO(processedSource, targetClass, options);
             } else if (isSDOToThriftTransformation(processedSource, targetClass)) {
                 return transformSDOToThrift(processedSource, targetClass, options);
@@ -126,13 +139,24 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
             throws commonj.connector.runtime.DataHandlerException {
         
         try {
+            if (target == null) {
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.VALIDATION_ERROR,
+                    "Target object cannot be null",
+                    "A target instance is required for transformInto"
+                );
+            }
             if (logger.isDebugEnabled()) {
                 logger.debug("Transforming source {} into target {}", 
                     source != null ? source.getClass().getName() : "null",
                     target != null ? target.getClass().getName() : "null");
             }
             
-            if (source == null || target == null) {
+            if (source == null) {
+                Object defaultValue = handleNullInput(target.getClass(), options);
+                if (defaultValue != null) {
+                    copyTransformedData(defaultValue, target);
+                }
                 return;
             }
             
@@ -157,12 +181,14 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @param context the binding context map
      */
     @Override
-    public void setBindingContext(Map<String, Object> context) {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public void setBindingContext(Map context) {
         this.bindingContext = context;
         
         // Update configuration from binding context
         if (context != null) {
-            ThriftSDOConfiguration newConfig = ThriftSDOConfiguration.fromBindingContext(context);
+            ThriftSDOConfiguration newConfig = new ThriftSDOConfiguration(configuration);
+            newConfig.overlayBindingContext((Map<String, Object>) context);
             updateConfiguration(newConfig);
         }
     }
@@ -174,16 +200,16 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return null or appropriate default value
      * @throws ThriftSDODataHandlerException if null handling is configured to error
      */
-    private Object handleNullInput(Class<?> targetClass) throws ThriftSDODataHandlerException {
+    private Object handleNullInput(Class<?> targetClass, Object options) throws ThriftSDODataHandlerException {
         switch (configuration.getNullHandlingStrategy()) {
             case ERROR:
                 throw new ThriftSDODataHandlerException(
                     ThriftSDODataHandlerException.ErrorCodes.NULL_INPUT_ERROR,
                     "Null input encountered while null handling is set to ERROR",
-                    "Target class: " + targetClass.getName()
+                    "Target class: " + (targetClass == null ? "null" : targetClass.getName())
                 );
             case DEFAULT:
-                return getDefaultValueForClass(targetClass);
+                return getDefaultValueForClass(targetClass, options);
             case PRESERVE:
             case OMIT:
             default:
@@ -199,7 +225,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return the processed source data
      * @throws ThriftSDODataHandlerException if preprocessing fails
      */
-    private Object preprocessInput(Object source) throws ThriftSDODataHandlerException {
+    private Object preprocessInput(Object source, Class<?> targetClass) throws ThriftSDODataHandlerException {
         try {
             if (source instanceof String || source instanceof TBase || source instanceof EDataObject) {
                 return source; // Already in suitable format
@@ -209,10 +235,20 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
                 return processByteArray((byte[]) source);
             } else if (source instanceof Reader) {
                 return processReader((Reader) source);
+            } else if (source instanceof Number || source instanceof Boolean || source instanceof java.util.Collection || source instanceof Map) {
+                return source;
+            } else if (targetClass != null && targetClass.isInstance(source)) {
+                return source;
             } else {
-                // Try to convert to string as fallback
-                return thriftSerializer.convertInputToString(source);
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.UNSUPPORTED_OPERATION,
+                    "Unsupported transformation: " + source.getClass().getName() + " -> " +
+                            (targetClass == null ? "null" : targetClass.getName()),
+                    "No supported conversion exists for this input type"
+                );
             }
+        } catch (ThriftSDODataHandlerException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to preprocess input: {}", source.getClass().getName(), e);
             throw new ThriftSDODataHandlerException(
@@ -232,11 +268,6 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @throws IOException if reading fails
      */
     private Object processInputStream(InputStream inputStream) throws IOException, ThriftSDODataHandlerException {
-        // Reset stream if possible
-        if (inputStream.markSupported()) {
-            inputStream.reset();
-        }
-        
         // Try to detect content type and process accordingly
         String content = thriftSerializer.convertInputToString(inputStream);
         
@@ -268,11 +299,6 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @throws IOException if reading fails
      */
     private Object processReader(Reader reader) throws IOException, ThriftSDODataHandlerException {
-        // Reset reader if possible
-        if (reader.markSupported()) {
-            reader.reset();
-        }
-        
         return thriftSerializer.convertInputToString(reader);
     }
     
@@ -287,6 +313,11 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
         return (source instanceof TBase || isValidThriftJson(source)) && 
                (targetClass == EDataObject.class || 
                 (targetClass != null && EDataObject.class.isAssignableFrom(targetClass)));
+    }
+
+    private boolean isStringToThriftTransformation(Object source, Class<?> targetClass) {
+        return source instanceof String && targetClass != null &&
+                TBase.class.isAssignableFrom(targetClass);
     }
     
     /**
@@ -434,10 +465,47 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @throws ThriftSDODataHandlerException if copying fails
      */
     private void copyTransformedData(Object transformed, Object target) throws ThriftSDODataHandlerException {
-        // This would involve reflection or specific copying logic
-        // For now, this is a placeholder
-        logger.warn("copyTransformedData not fully implemented - transformed: {}, target: {}", 
-            transformed.getClass().getName(), target.getClass().getName());
+        if (!(transformed instanceof TBase) || !(target instanceof TBase)) {
+            throw new ThriftSDODataHandlerException(
+                ThriftSDODataHandlerException.ErrorCodes.UNSUPPORTED_OPERATION,
+                "Unsupported transformation: cannot populate target " + target.getClass().getName(),
+                "transformInto metadata copying requires Thrift source and target objects"
+            );
+        }
+        TBase sourceThrift = (TBase) transformed;
+        TBase targetThrift = (TBase) target;
+        if (!targetThrift.getClass().isInstance(sourceThrift)) {
+            throw new ThriftSDODataHandlerException(
+                ThriftSDODataHandlerException.ErrorCodes.VALIDATION_ERROR,
+                "Transformed Thrift type is incompatible with target",
+                sourceThrift.getClass().getName() + " -> " + targetThrift.getClass().getName()
+            );
+        }
+        try {
+            Field metadataField = sourceThrift.getClass().getField("metaDataMap");
+            Object rawMetadata = metadataField.get(null);
+            if (!(rawMetadata instanceof Map)) {
+                throw new IllegalArgumentException("Invalid Thrift metadata map");
+            }
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) rawMetadata).entrySet()) {
+                if (!(entry.getKey() instanceof TFieldIdEnum) || !(entry.getValue() instanceof FieldMetaData)) {
+                    throw new IllegalArgumentException("Unsupported Thrift field metadata");
+                }
+                TFieldIdEnum field = (TFieldIdEnum) entry.getKey();
+                if (sourceThrift.isSet(field)) {
+                    targetThrift.setFieldValue(field, sourceThrift.getFieldValue(field));
+                }
+                // Unset source fields leave the target field untouched: presence is
+                // preserved and primitive-backed fields are never assigned null.
+            }
+        } catch (Exception e) {
+            throw new ThriftSDODataHandlerException(
+                ThriftSDODataHandlerException.ErrorCodes.TRANSFORMATION_ERROR,
+                "Failed to populate Thrift target via metadata",
+                "Source: " + sourceThrift.getClass().getName() + ", target: " + targetThrift.getClass().getName(),
+                e
+            );
+        }
     }
     
     /**
@@ -468,20 +536,47 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @param targetClass the target class
      * @return the default value
      */
-    private Object getDefaultValueForClass(Class<?> targetClass) {
+    @SuppressWarnings("unchecked")
+    private Object getDefaultValueForClass(Class<?> targetClass, Object options) throws ThriftSDODataHandlerException {
         if (targetClass == null) {
             return null;
         }
         
-        if (targetClass == boolean.class) return false;
-        if (targetClass == byte.class) return (byte) 0;
-        if (targetClass == short.class) return (short) 0;
-        if (targetClass == int.class) return 0;
-        if (targetClass == long.class) return 0L;
-        if (targetClass == float.class) return 0.0f;
-        if (targetClass == double.class) return 0.0;
+        if (targetClass == boolean.class || targetClass == Boolean.class) return false;
+        if (targetClass == byte.class || targetClass == Byte.class) return (byte) 0;
+        if (targetClass == short.class || targetClass == Short.class) return (short) 0;
+        if (targetClass == int.class || targetClass == Integer.class) return 0;
+        if (targetClass == long.class || targetClass == Long.class) return 0L;
+        if (targetClass == float.class || targetClass == Float.class) return 0.0f;
+        if (targetClass == double.class || targetClass == Double.class) return 0.0;
         if (targetClass == String.class) return "";
-        
+
+        if (TBase.class.isAssignableFrom(targetClass)) {
+            try {
+                java.lang.reflect.Constructor<?> constructor = targetClass.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                return constructor.newInstance();
+            } catch (Exception e) {
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.REFLECTION_ERROR,
+                    "Cannot construct default Thrift target: " + targetClass.getName(),
+                    "A no-argument constructor is required",
+                    e
+                );
+            }
+        }
+        if (targetClass == EDataObject.class || EDataObject.class.isAssignableFrom(targetClass)) {
+            Class<? extends TBase> thriftClass = determineThriftClassFromOptions(options);
+            if (thriftClass == null) {
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.CONFIGURATION_ERROR,
+                    "Cannot determine Thrift class for default SDO transformation",
+                    "Provide a concrete Thrift class in options or binding context"
+                );
+            }
+            Object thriftDefault = getDefaultValueForClass(thriftClass, options);
+            return thriftToSDOTransformer.transformToSDO((TBase) thriftDefault);
+        }
         return null;
     }
     

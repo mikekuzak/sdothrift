@@ -1,49 +1,56 @@
 package com.sdothrift.transformer;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.exception.ThriftSDODataHandlerException;
-import com.sdothrift.serializer.ThriftSerializer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.thrift.TBase;
+import org.apache.thrift.TFieldIdEnum;
 import org.apache.thrift.meta_data.FieldMetaData;
 import org.apache.thrift.meta_data.FieldValueMetaData;
+import org.apache.thrift.meta_data.ListMetaData;
+import org.apache.thrift.meta_data.MapMetaData;
+import org.apache.thrift.meta_data.SetMetaData;
+import org.apache.thrift.meta_data.StructMetaData;
 import org.apache.thrift.protocol.TType;
 import org.eclipse.emf.ecore.EAttribute;
 import org.eclipse.emf.ecore.EClass;
-import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.EDataType;
 import org.eclipse.emf.ecore.EPackage;
 import org.eclipse.emf.ecore.EReference;
 import org.eclipse.emf.ecore.EStructuralFeature;
 import org.eclipse.emf.ecore.EcoreFactory;
 import org.eclipse.emf.ecore.EcorePackage;
-import org.eclipse.emf.ecore.impl.EObjectImpl;
+import org.eclipse.emf.ecore.ETypedElement;
 import org.eclipse.emf.ecore.sdo.EDataObject;
+import org.eclipse.emf.ecore.sdo.impl.DynamicEDataObjectImpl;
+import org.eclipse.emf.ecore.sdo.util.SDOUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Field;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Transformer class for converting Thrift objects to SDO DataObjects.
- * Provides comprehensive type mapping and handles complex nested structures.
+ * Maps Thrift metadata directly to SDO (metadata field -> isSet/getFieldValue ->
+ * recursive conversion -> eSet) without routing through wire serialization.
  */
 public class ThriftToSDOTransformer {
     
     private static final Logger logger = LoggerFactory.getLogger(ThriftToSDOTransformer.class);
     
     private final ThriftSDOConfiguration configuration;
-    private final ThriftSerializer thriftSerializer;
-    private final ObjectMapper objectMapper;
+    private final EPackage dynamicEPackage;
     
     // Cache for generated EClasses to improve performance
     private final Map<String, EClass> eclassCache = new ConcurrentHashMap<>();
+    
+    // Cache for generated map-entry EClasses (per key/value type signature)
+    private final Map<String, EClass> mapEntryCache = new ConcurrentHashMap<>();
+    
+    // Lock guarding two-phase EClass creation so recursive Thrift types work
+    private final Object schemaLock = new Object();
     
     /**
      * Constructs a new ThriftToSDOTransformer with the given configuration.
@@ -52,12 +59,20 @@ public class ThriftToSDOTransformer {
      */
     public ThriftToSDOTransformer(ThriftSDOConfiguration configuration) {
         this.configuration = configuration;
-        this.thriftSerializer = new ThriftSerializer(configuration);
-        this.objectMapper = new ObjectMapper();
+        this.dynamicEPackage = createDynamicEPackage();
+    }
+    
+    private EPackage createDynamicEPackage() {
+        EPackage ePackage = EcoreFactory.eINSTANCE.createEPackage();
+        ePackage.setName("sdothrift.dynamic");
+        ePackage.setNsPrefix("sdothrift");
+        ePackage.setNsURI("http://sdothrift/dynamic");
+        ePackage.setEFactoryInstance(new DynamicEDataObjectImpl.FactoryImpl());
+        return ePackage;
     }
     
     /**
-     * Transforms a Thrift object to an SDO DataObject.
+     * Transforms a Thrift object to an SDO DataObject using direct metadata mapping.
      *
      * @param thriftObject the Thrift object to transform
      * @return the transformed SDO DataObject
@@ -69,15 +84,31 @@ public class ThriftToSDOTransformer {
         }
         
         try {
-            // Convert Thrift to JSON for easier processing
-            String jsonRepresentation = thriftSerializer.serializeToString(thriftObject);
-            if (jsonRepresentation == null || jsonRepresentation.trim().isEmpty()) {
-                return createEmptySDO(thriftObject.getClass());
+            @SuppressWarnings("unchecked")
+            Class<? extends TBase> thriftClass = (Class<? extends TBase>) thriftObject.getClass();
+            
+            EClass eClass = getOrCreateEClass(thriftClass);
+            EDataObject dataObject = SDOUtil.create(eClass);
+            
+            Map<?, ?> fieldMetaData = TypeMapper.getFieldMetaData(thriftClass);
+            
+            for (Map.Entry<?, ?> entry : fieldMetaData.entrySet()) {
+                FieldMetaData metaData = (FieldMetaData) entry.getValue();
+                TFieldIdEnum fieldId = (TFieldIdEnum) entry.getKey();
+                
+                if (thriftObject.isSet(fieldId)) {
+                    Object thriftValue = thriftObject.getFieldValue(fieldId);
+                    Object sdoValue = convertThriftValueToSDO(thriftValue, metaData.valueMetaData);
+                    setSDOFieldValue(dataObject, metaData.fieldName, sdoValue);
+                } else {
+                    handleNullField(dataObject, metaData.fieldName, metaData.valueMetaData.type);
+                }
             }
             
-            JsonNode jsonNode = objectMapper.readTree(jsonRepresentation);
-            return transformJsonToSDO(jsonNode, thriftObject.getClass());
+            return dataObject;
             
+        } catch (ThriftSDODataHandlerException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to transform Thrift object to SDO: {}", thriftObject.getClass().getName(), e);
             throw new ThriftSDODataHandlerException(
@@ -90,267 +121,96 @@ public class ThriftToSDOTransformer {
     }
     
     /**
-     * Transforms a JSON representation of a Thrift object to SDO DataObject.
+     * Converts a Thrift field value to its SDO representation, recursing on the
+     * element/key/value metadata (never on the parent container type).
      *
-     * @param jsonNode the JSON node representing the Thrift object
-     * @param thriftClass the original Thrift class
-     * @return the transformed SDO DataObject
-     * @throws ThriftSDODataHandlerException if transformation fails
+     * @param value the Thrift field value
+     * @param metaData the value metadata describing the value
+     * @return the SDO representation
      */
-    private EDataObject transformJsonToSDO(JsonNode jsonNode, Class<? extends TBase> thriftClass) 
+    private Object convertThriftValueToSDO(Object value, FieldValueMetaData metaData) 
             throws ThriftSDODataHandlerException {
-        
-        try {
-            // Create or get cached EClass for the Thrift class
-            EClass eClass = getOrCreateEClass(thriftClass);
-            
-            // Create SDO DataObject instance
-            EDataObject dataObject = (EDataObject) EcoreFactory.eINSTANCE.create(eClass);
-            
-            // Get Thrift field metadata
-            Map<?, ?> fieldMetaData = TypeMapper.getFieldMetaData(thriftClass);
-            
-            // Process each field
-            for (Map.Entry<?, ?> entry : fieldMetaData.entrySet()) {
-                Object fieldId = entry.getKey();
-                FieldMetaData metaData = (FieldMetaData) entry.getValue();
-                
-                String fieldName = metaData.fieldName;
-                byte fieldType = metaData.valueMetaData.type;
-                
-                // Get the value from JSON
-                JsonNode fieldValueNode = jsonNode.get(fieldName);
-                if (fieldValueNode == null || fieldValueNode.isNull()) {
-                    handleNullField(dataObject, fieldName, fieldType);
-                    continue;
-                }
-                
-                // Transform the field value
-                Object sdoValue = transformFieldToSDO(fieldValueNode, fieldType, metaData);
-                
-                // Set the value in the SDO object
-                setSDOFieldValue(dataObject, fieldName, sdoValue);
-            }
-            
-            return dataObject;
-            
-        } catch (Exception e) {
-            logger.error("Failed to transform JSON to SDO for class: {}", thriftClass.getName(), e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.SDO_PROCESSING_ERROR,
-                "Failed to transform JSON to SDO for class: " + thriftClass.getName(),
-                "Thrift class: " + thriftClass.getName(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms a field value from JSON to SDO format.
-     *
-     * @param fieldValueNode the JSON node containing the field value
-     * @param fieldType the Thrift field type
-     * @param metaData the field metadata
-     * @return the transformed SDO value
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private Object transformFieldToSDO(JsonNode fieldValueNode, byte fieldType, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        try {
-            switch (fieldType) {
-                case TType.BOOL:
-                    return fieldValueNode.asBoolean();
-                    
-                case TType.BYTE:
-                    return (byte) fieldValueNode.asInt();
-                    
-                case TType.I16:
-                    return (short) fieldValueNode.asInt();
-                    
-                case TType.I32:
-                    return fieldValueNode.asInt();
-                    
-                case TType.I64:
-                    return fieldValueNode.asLong();
-                    
-                case TType.DOUBLE:
-                    return fieldValueNode.asDouble();
-                    
-                case TType.STRING:
-                    return fieldValueNode.asText();
-                    
-                case TType.LIST:
-                    return transformListToSDO(fieldValueNode, metaData);
-                    
-                case TType.SET:
-                    return transformSetToSDO(fieldValueNode, metaData);
-                    
-                case TType.MAP:
-                    return transformMapToSDO(fieldValueNode, metaData);
-                    
-                case TType.STRUCT:
-                    return transformStructToSDO(fieldValueNode, metaData);
-                    
-                default:
-                    logger.warn("Unsupported Thrift field type: {}", fieldType);
-                    return null;
-            }
-        } catch (Exception e) {
-            logger.error("Failed to transform field to SDO, type: {}", fieldType, e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.TYPE_MAPPING_ERROR,
-                "Failed to transform field to SDO, type: " + fieldType,
-                "Field metadata: " + metaData.toString(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms a JSON array to SDO List.
-     *
-     * @param arrayNode the JSON array node
-     * @param metaData the field metadata
-     * @return the SDO List
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private List<Object> transformListToSDO(JsonNode arrayNode, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        List<Object> sdoList = new java.util.ArrayList<>();
-        
-        for (JsonNode elementNode : arrayNode) {
-            Object element = transformCollectionElementToSDO(elementNode, metaData);
-            sdoList.add(element);
-        }
-        
-        return sdoList;
-    }
-    
-    /**
-     * Transforms a JSON array to SDO Set.
-     *
-     * @param arrayNode the JSON array node
-     * @param metaData the field metadata
-     * @return the SDO Set
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private Set<Object> transformSetToSDO(JsonNode arrayNode, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        Set<Object> sdoSet = new java.util.HashSet<>();
-        
-        for (JsonNode elementNode : arrayNode) {
-            Object element = transformCollectionElementToSDO(elementNode, metaData);
-            sdoSet.add(element);
-        }
-        
-        return sdoSet;
-    }
-    
-    /**
-     * Transforms a JSON object to SDO Map.
-     *
-     * @param objectNode the JSON object node
-     * @param metaData the field metadata
-     * @return the SDO Map
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private Map<Object, Object> transformMapToSDO(JsonNode objectNode, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        Map<Object, Object> sdoMap = new java.util.HashMap<>();
-        
-        java.util.Iterator<Map.Entry<String, JsonNode>> iter = objectNode.fields();
-        while (iter.hasNext()) {
-            Map.Entry<String, JsonNode> entry = iter.next();
-            String key = entry.getKey();
-            JsonNode valueNode = entry.getValue();
-
-            Object sdoKey = convertToSDOType(key, String.class);
-            Object sdoValue = transformCollectionElementToSDO(valueNode, metaData);
-
-            sdoMap.put(sdoKey, sdoValue);
-        }
-        
-        return sdoMap;
-    }
-    
-    /**
-     * Transforms a JSON object to SDO struct (nested DataObject).
-     *
-     * @param structNode the JSON object node
-     * @param metaData the field metadata
-     * @return the SDO DataObject
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private EDataObject transformStructToSDO(JsonNode structNode, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        try {
-            // For struct types, we need to extract the class name or handle differently
-            // This is a simplified approach - in real implementation, you'd need more sophisticated handling
-            String structName = metaData.fieldName + "Struct";
-            Class<?> structClass = null; // This would need proper resolution from Thrift metadata
-            
-            // For now, create a generic approach
-            return createGenericSDOFromJson(structNode, structName);
-            
-        } catch (Exception e) {
-            logger.error("Failed to transform struct to SDO: {}", metaData.toString(), e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.TRANSFORMATION_ERROR,
-                "Failed to transform struct to SDO",
-                "Field metadata: " + metaData.toString(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms a collection element to SDO format.
-     *
-     * @param elementNode the JSON node for the element
-     * @param metaData the field metadata
-     * @return the transformed element
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private Object transformCollectionElementToSDO(JsonNode elementNode, FieldMetaData metaData) 
-            throws ThriftSDODataHandlerException {
-        
-        if (elementNode.isNull()) {
+        if (value == null) {
             return null;
         }
         
-                // For collection elements, assume basic types unless specified
-                byte elementType = TType.STRING; // Default, should be enhanced based on metadata
-                if (metaData.valueMetaData != null) {
-                    elementType = metaData.valueMetaData.type;
-                }
-                
-                return transformFieldToSDO(elementNode, elementType, metaData);
+        if (metaData instanceof StructMetaData) {
+            if (!(value instanceof TBase)) {
+                throw new IllegalArgumentException("Expected TBase for struct field but found: " 
+                    + value.getClass().getName());
+            }
+            return transformToSDO((TBase) value);
+        }
+        
+        if (metaData instanceof ListMetaData) {
+            if (!(value instanceof List)) {
+                throw new IllegalArgumentException("Expected List for list field but found: " 
+                    + value.getClass().getName());
+            }
+            List<Object> sdoList = new java.util.ArrayList<>();
+            for (Object element : (List<?>) value) {
+                sdoList.add(convertThriftValueToSDO(element, ((ListMetaData) metaData).elemMetaData));
+            }
+            return sdoList;
+        }
+        
+        if (metaData instanceof SetMetaData) {
+            if (!(value instanceof java.util.Set)) {
+                throw new IllegalArgumentException("Expected Set for set field but found: " 
+                    + value.getClass().getName());
+            }
+            // Sets are represented as SDO lists; uniqueness is modeled in the EClass
+            List<Object> sdoList = new java.util.ArrayList<>();
+            for (Object element : (java.util.Set<?>) value) {
+                sdoList.add(convertThriftValueToSDO(element, ((SetMetaData) metaData).elemMetaData));
+            }
+            return sdoList;
+        }
+        
+        if (metaData instanceof MapMetaData) {
+            if (!(value instanceof Map)) {
+                throw new IllegalArgumentException("Expected Map for map field but found: " 
+                    + value.getClass().getName());
+            }
+            MapMetaData mapMetaData = (MapMetaData) metaData;
+            EClass entryEClass = getOrCreateMapEntryEClass(mapMetaData);
+            List<Object> entries = new java.util.ArrayList<>();
+            for (Map.Entry<?, ?> mapEntry : ((Map<?, ?>) value).entrySet()) {
+                EDataObject entryObject = SDOUtil.create(entryEClass);
+                setSDOFieldValue(entryObject, "key", 
+                    convertThriftValueToSDO(mapEntry.getKey(), mapMetaData.keyMetaData));
+                setSDOFieldValue(entryObject, "value", 
+                    convertThriftValueToSDO(mapEntry.getValue(), mapMetaData.valueMetaData));
+                entries.add(entryObject);
+            }
+            return entries;
+        }
+        
+        // Base scalar
+        Class<?> sdoClass = TypeMapper.mapThriftToSDO(metaData.type);
+        if (sdoClass == null) {
+            throw new IllegalArgumentException("Unsupported Thrift field type: " + metaData.type);
+        }
+        return TypeMapper.convertValue(value, sdoClass);
     }
     
-
-    
     /**
-     * Sets a field value in an SDO DataObject.
+     * Sets a field value in an SDO DataObject. Fails loudly on missing features
+     * or failed eSet; never logs-and-continues.
      *
      * @param dataObject the SDO DataObject
      * @param fieldName the field name
      * @param value the value to set
      */
     private void setSDOFieldValue(EDataObject dataObject, String fieldName, Object value) {
+        EStructuralFeature feature = dataObject.eClass().getEStructuralFeature(fieldName);
+        if (feature == null) {
+            throw new IllegalArgumentException("Feature not found in SDO: " + fieldName);
+        }
         try {
-            EStructuralFeature feature = dataObject.eClass().getEStructuralFeature(fieldName);
-            if (feature != null) {
-                dataObject.eSet(feature, value);
-            } else {
-                logger.warn("Feature not found in SDO: {}", fieldName);
-            }
+            dataObject.eSet(feature, value);
         } catch (Exception e) {
-            logger.error("Failed to set SDO field value: {}", fieldName, e);
+            throw new IllegalArgumentException("Failed to set SDO field value: " + fieldName, e);
         }
     }
     
@@ -364,7 +224,7 @@ public class ThriftToSDOTransformer {
     private void handleNullField(EDataObject dataObject, String fieldName, byte fieldType) {
         switch (configuration.getNullHandlingStrategy()) {
             case PRESERVE:
-                setSDOFieldValue(dataObject, fieldName, null);
+                preserveNullField(dataObject, fieldName);
                 break;
             case DEFAULT:
                 setSDOFieldValue(dataObject, fieldName, getDefaultValueForType(fieldType));
@@ -375,7 +235,18 @@ public class ThriftToSDOTransformer {
             case ERROR:
                 throw new IllegalArgumentException("Null value encountered for field: " + fieldName);
             default:
-                setSDOFieldValue(dataObject, fieldName, null);
+                preserveNullField(dataObject, fieldName);
+        }
+    }
+
+    private void preserveNullField(EDataObject dataObject, String fieldName) {
+        EStructuralFeature feature = dataObject.eClass().getEStructuralFeature(fieldName);
+        if (feature == null) {
+            throw new IllegalArgumentException("Feature not found in SDO: " + fieldName);
+        }
+        // Null collections are absent, not set-to-null; eSet(null) fails for many features.
+        if (!feature.isMany()) {
+            setSDOFieldValue(dataObject, fieldName, null);
         }
     }
     
@@ -405,54 +276,18 @@ public class ThriftToSDOTransformer {
             case TType.SET:
                 return new java.util.ArrayList<>();
             case TType.MAP:
-                return new java.util.HashMap<>();
+                // SDO maps are represented as many-valued lists of entry objects.
+                return new java.util.ArrayList<>();
             default:
                 return null;
         }
     }
     
     /**
-     * Converts a value to the appropriate SDO type.
-     *
-     * @param value the value to convert
-     * @param targetClass the target class
-     * @return the converted value
-     */
-    private Object convertToSDOType(Object value, Class<?> targetClass) {
-        try {
-            return TypeMapper.convertValue(value, targetClass);
-        } catch (Exception e) {
-            logger.warn("Failed to convert to SDO type, using original value: {}", value.getClass().getName());
-            return value;
-        }
-    }
-    
-    /**
-     * Creates an empty SDO DataObject for the given Thrift class.
-     *
-     * @param thriftClass the Thrift class
-     * @return the empty SDO DataObject
-     * @throws ThriftSDODataHandlerException if creation fails
-     */
-    private EDataObject createEmptySDO(Class<? extends TBase> thriftClass) 
-            throws ThriftSDODataHandlerException {
-        
-        try {
-            EClass eClass = getOrCreateEClass(thriftClass);
-            return (EDataObject) EcoreFactory.eINSTANCE.create(eClass);
-        } catch (Exception e) {
-            logger.error("Failed to create empty SDO for class: {}", thriftClass.getName(), e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.SDO_PROCESSING_ERROR,
-                "Failed to create empty SDO for class: " + thriftClass.getName(),
-                "Thrift class: " + thriftClass.getName(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Gets or creates an EClass for the given Thrift class.
+     * Gets or creates an EClass for the given Thrift class using synchronized
+     * two-phase creation: the EClass shell is registered in the cache and the
+     * shared dynamic package before its features are populated, so recursive
+     * Thrift struct types terminate correctly.
      *
      * @param thriftClass the Thrift class
      * @return the corresponding EClass
@@ -462,157 +297,217 @@ public class ThriftToSDOTransformer {
             throws ThriftSDODataHandlerException {
         
         String className = thriftClass.getName();
-        return eclassCache.computeIfAbsent(className, k -> {
+        synchronized (schemaLock) {
+            EClass existing = eclassCache.get(className);
+            if (existing != null) {
+                return existing;
+            }
+            
+            // Phase 1: create and register the shell
+            EClass eClass = EcoreFactory.eINSTANCE.createEClass();
+            eClass.setName(StringUtils.substringAfterLast(thriftClass.getName(), "."));
+            addEClassToDynamicPackage(eClass);
+            eclassCache.put(className, eClass);
+            
+            // Phase 2: populate features (may recurse into getOrCreateEClass)
             try {
-                return createEClassFromThrift(thriftClass);
+                populateEClassFeatures(eClass, thriftClass);
+            } catch (ThriftSDODataHandlerException e) {
+                throw e;
             } catch (Exception e) {
                 logger.error("Failed to create EClass for: {}", className, e);
-                throw new RuntimeException("Failed to create EClass for: " + className, e);
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.SDO_PROCESSING_ERROR,
+                    "Failed to create EClass for: " + className,
+                    "Thrift class: " + className,
+                    e
+                );
             }
-        });
+            
+            return eClass;
+        }
     }
     
     /**
-     * Creates an EClass from a Thrift class definition.
+     * Populates an EClass shell with features derived from Thrift field metadata.
      *
-     * @param thriftClass the Thrift class
-     * @return the created EClass
-     * @throws Exception if creation fails
+     * @param eClass the EClass shell to populate
+     * @param thriftClass the Thrift class the features are derived from
      */
-    private EClass createEClassFromThrift(Class<? extends TBase> thriftClass) throws Exception {
-        EClass eClass = EcoreFactory.eINSTANCE.createEClass();
-        eClass.setName(StringUtils.substringAfterLast(thriftClass.getName(), "."));
-        
-        // Get field metadata and create EAttributes/EReferences
+    private void populateEClassFeatures(EClass eClass, Class<? extends TBase> thriftClass) 
+            throws ThriftSDODataHandlerException {
         Map<?, ?> fieldMetaData = TypeMapper.getFieldMetaData(thriftClass);
         
         for (Map.Entry<?, ?> entry : fieldMetaData.entrySet()) {
             FieldMetaData metaData = (FieldMetaData) entry.getValue();
-            
-            if (TypeMapper.isBaseType(metaData.valueMetaData.type)) {
-                // Create EAttribute for base types
-                EAttribute attribute = EcoreFactory.eINSTANCE.createEAttribute();
-                attribute.setName(metaData.fieldName);
-                attribute.setEType(getEDataTypeForThriftType(metaData.valueMetaData.type));
-                eClass.getEStructuralFeatures().add(attribute);
-            } else if (TypeMapper.isStructType(metaData.valueMetaData.type)) {
-                // Create EReference for struct types
-                EReference reference = EcoreFactory.eINSTANCE.createEReference();
-                reference.setName(metaData.fieldName);
-                if (metaData.valueMetaData instanceof org.apache.thrift.meta_data.StructMetaData) {
-                    org.apache.thrift.meta_data.StructMetaData structMeta = (org.apache.thrift.meta_data.StructMetaData) metaData.valueMetaData;
-                    reference.setEType(getOrCreateEClass(structMeta.structClass));
-                }
-                eClass.getEStructuralFeatures().add(reference);
-            }
+            EStructuralFeature feature = createFeatureForMetaData(metaData.fieldName, metaData.valueMetaData);
+            eClass.getEStructuralFeatures().add(feature);
         }
-        
-        return eClass;
     }
     
     /**
-     * Creates a generic SDO DataObject from JSON when struct class is not available.
+     * Creates an EAttribute or containment EReference for the given value metadata.
+     * Collections are modeled per the shared SDO contract:
+     * LIST = many-valued ordered non-unique; SET = many-valued unique;
+     * MAP = many-valued list of containment PropertiesEntry{key,value}.
      *
-     * @param structNode the JSON node
-     * @param structName the struct name
-     * @return the created SDO DataObject
-     * @throws ThriftSDODataHandlerException if creation fails
+     * @param name the feature name
+     * @param metaData the value metadata
+     * @return the structural feature
      */
-    private EDataObject createGenericSDOFromJson(JsonNode structNode, String structName) 
+    private EStructuralFeature createFeatureForMetaData(String name, FieldValueMetaData metaData) 
             throws ThriftSDODataHandlerException {
-        
-        try {
-            EClass eClass = EcoreFactory.eINSTANCE.createEClass();
-            eClass.setName(structName);
-            
-            // Add attributes based on JSON fields
-        java.util.Iterator<Map.Entry<String, JsonNode>> iter1 = structNode.fields();
-        while (iter1.hasNext()) {
-            Map.Entry<String, JsonNode> entry = iter1.next();
-            String fieldName = entry.getKey();
-            EAttribute attribute = EcoreFactory.eINSTANCE.createEAttribute();
-            attribute.setName(fieldName);
-            attribute.setEType(EcorePackage.eINSTANCE.getEString()); // Default to String
-            eClass.getEStructuralFeatures().add(attribute);
+        if (metaData instanceof StructMetaData) {
+            EReference reference = EcoreFactory.eINSTANCE.createEReference();
+            reference.setName(name);
+            reference.setEType(getOrCreateEClass(((StructMetaData) metaData).structClass));
+            reference.setContainment(true);
+            return reference;
         }
-            
-            EDataObject dataObject = (EDataObject) EcoreFactory.eINSTANCE.create(eClass);
-            
-            // Set values
-        java.util.Iterator<Map.Entry<String, JsonNode>> iter2 = structNode.fields();
-        while (iter2.hasNext()) {
-            Map.Entry<String, JsonNode> entry = iter2.next();
-            String fieldName = entry.getKey();
-            JsonNode valueNode = entry.getValue();
-                
-                Object value = null;
-                if (!valueNode.isNull()) {
-                    if (valueNode.isTextual()) {
-                        value = valueNode.asText();
-                    } else if (valueNode.isBoolean()) {
-                        value = valueNode.asBoolean();
-                    } else if (valueNode.isInt()) {
-                        value = valueNode.asInt();
-                    } else if (valueNode.isLong()) {
-                        value = valueNode.asLong();
-                    } else if (valueNode.isDouble()) {
-                        value = valueNode.asDouble();
-                    }
-                }
-                
-                setSDOFieldValue(dataObject, fieldName, value);
+        
+        if (metaData instanceof ListMetaData) {
+            EStructuralFeature elementFeature = 
+                createFeatureForMetaData(name, ((ListMetaData) metaData).elemMetaData);
+            elementFeature.setUpperBound(ETypedElement.UNBOUNDED_MULTIPLICITY);
+            elementFeature.setOrdered(true);
+            elementFeature.setUnique(false);
+            return elementFeature;
+        }
+        
+        if (metaData instanceof SetMetaData) {
+            EStructuralFeature elementFeature = 
+                createFeatureForMetaData(name, ((SetMetaData) metaData).elemMetaData);
+            elementFeature.setUpperBound(ETypedElement.UNBOUNDED_MULTIPLICITY);
+            elementFeature.setOrdered(true);
+            elementFeature.setUnique(true);
+            return elementFeature;
+        }
+        
+        if (metaData instanceof MapMetaData) {
+            EReference reference = EcoreFactory.eINSTANCE.createEReference();
+            reference.setName(name);
+            reference.setEType(getOrCreateMapEntryEClass((MapMetaData) metaData));
+            reference.setContainment(true);
+            reference.setUpperBound(ETypedElement.UNBOUNDED_MULTIPLICITY);
+            reference.setOrdered(true);
+            reference.setUnique(false);
+            return reference;
+        }
+        
+        // Base scalar attribute; presence matters, so scalars are unsettable
+        EAttribute attribute = EcoreFactory.eINSTANCE.createEAttribute();
+        attribute.setName(name);
+        attribute.setEType(getEDataTypeForThriftType(metaData.type));
+        attribute.setUnsettable(true);
+        return attribute;
+    }
+    
+    /**
+     * Gets or creates the entry EClass for a map field: PropertiesEntry{key,value}
+     * with key/value features derived from the MapMetaData key/value metadata.
+     *
+     * @param mapMetaData the map metadata
+     * @return the entry EClass
+     */
+    private EClass getOrCreateMapEntryEClass(MapMetaData mapMetaData) 
+            throws ThriftSDODataHandlerException {
+        String signature = mapEntryTypeSignature(mapMetaData.keyMetaData) 
+            + "_" + mapEntryTypeSignature(mapMetaData.valueMetaData);
+        
+        synchronized (schemaLock) {
+            EClass existing = mapEntryCache.get(signature);
+            if (existing != null) {
+                return existing;
             }
             
-            return dataObject;
+            EClass entryEClass = EcoreFactory.eINSTANCE.createEClass();
+            entryEClass.setName("PropertiesEntry_" + signature);
+            addEClassToDynamicPackage(entryEClass);
+            mapEntryCache.put(signature, entryEClass);
             
-        } catch (Exception e) {
-            logger.error("Failed to create generic SDO from JSON: {}", structName, e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.SDO_PROCESSING_ERROR,
-                "Failed to create generic SDO from JSON: " + structName,
-                "Struct name: " + structName,
-                e
-            );
+            entryEClass.getEStructuralFeatures().add(
+                createFeatureForMetaData("key", mapMetaData.keyMetaData));
+            entryEClass.getEStructuralFeatures().add(
+                createFeatureForMetaData("value", mapMetaData.valueMetaData));
+            
+            return entryEClass;
+        }
+    }
+    
+    private String mapEntryTypeSignature(FieldValueMetaData metaData) {
+        if (metaData instanceof StructMetaData) {
+            return ((StructMetaData) metaData).structClass.getSimpleName();
+        }
+        Class<?> sdoClass = TypeMapper.mapThriftToSDO(metaData.type);
+        return sdoClass != null ? sdoClass.getSimpleName() : "Unknown" + metaData.type;
+    }
+    
+    private void addEClassToDynamicPackage(EClass eClass) {
+        synchronized (dynamicEPackage) {
+            if (eClass.getEPackage() == null) {
+                dynamicEPackage.getEClassifiers().add(eClass);
+            }
         }
     }
     
     /**
-     * Gets the appropriate EDataType for a Thrift type.
+     * Gets the standard boxed Ecore datatype for a Thrift base type.
      *
      * @param thriftType the Thrift type
-     * @return the corresponding EDataType
+     * @return the corresponding Ecore datatype
      */
-    private org.eclipse.emf.ecore.EDataType getEDataTypeForThriftType(byte thriftType) {
-        Class<?> javaType = TypeMapper.mapThriftToSDO(thriftType);
-        if (javaType != null) {
-            org.eclipse.emf.ecore.EDataType eDataType = EcoreFactory.eINSTANCE.createEDataType();
-            eDataType.setInstanceClassName(javaType.getName());
-            return eDataType;
+    private EDataType getEDataTypeForThriftType(byte thriftType) {
+        switch (thriftType) {
+            case TType.BOOL:
+                return EcorePackage.eINSTANCE.getEBooleanObject();
+            case TType.BYTE:
+                return EcorePackage.eINSTANCE.getEByteObject();
+            case TType.I16:
+                return EcorePackage.eINSTANCE.getEShortObject();
+            case TType.I32:
+                return EcorePackage.eINSTANCE.getEIntegerObject();
+            case TType.I64:
+                return EcorePackage.eINSTANCE.getELongObject();
+            case TType.DOUBLE:
+                return EcorePackage.eINSTANCE.getEDoubleObject();
+            case TType.STRING:
+                return EcorePackage.eINSTANCE.getEString();
+            default:
+                throw new IllegalArgumentException("Unsupported Thrift type for SDO mapping: " + thriftType);
         }
-        
-        // Default to String type
-        org.eclipse.emf.ecore.EDataType eDataType = EcoreFactory.eINSTANCE.createEDataType();
-        eDataType.setInstanceClassName(String.class.getName());
-        return eDataType;
     }
     
     /**
      * Clears all caches. Useful for testing or memory management.
      */
     public void clearCaches() {
-        eclassCache.clear();
+        synchronized (schemaLock) {
+            eclassCache.clear();
+            mapEntryCache.clear();
+        }
         TypeMapper.clearCaches();
     }
     
     /**
-     * Gets cache statistics for monitoring purposes.
+     * Gets cache statistics for monitoring purposes. Global TypeMapper statistics
+     * are merged first so the local "fieldMetaDataCacheSize" key is preserved.
      *
      * @return a map containing cache statistics
      */
     public Map<String, Integer> getCacheStatistics() {
         Map<String, Integer> stats = new java.util.HashMap<>();
-        stats.put("eclassCacheSize", eclassCache.size());
         stats.putAll(TypeMapper.getCacheStatistics());
+        stats.put("eclassCacheSize", eclassCache.size());
+        stats.put("mapEntryCacheSize", mapEntryCache.size());
         return stats;
+    }
+    
+    /**
+     * Gets the current configuration.
+     *
+     * @return the configuration
+     */
+    public ThriftSDOConfiguration getConfiguration() {
+        return configuration;
     }
 }

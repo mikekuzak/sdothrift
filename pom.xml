@@ -53,7 +53,34 @@
             <version>2.23.0</version>
         </dependency>
 
+        <!-- SDO 2.1 API (commonj.sdo) -->
+        <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>commonj-sdo</artifactId>
+            <version>2.1.0</version>
+        </dependency>
 
+        <!-- EMF SDO implementation (org.eclipse.emf.ecore.sdo) -->
+        <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>ecore-sdo</artifactId>
+            <version>2.1.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.eclipse.emf</groupId>
+            <artifactId>ecore-change</artifactId>
+            <version>2.1.0</version>
+        </dependency>
+
+        <!-- IBM DataHandler API + Business Object services (provided by IID/BAW runtime) -->
+        <dependency>
+            <groupId>com.ibm</groupId>
+            <artifactId>soacore-apis</artifactId>
+            <version>1.0.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/jars/soacore_apis.jar</systemPath>
+        </dependency>
 
         <!-- JSON Processing -->
         <dependency>
@@ -201,9 +228,7 @@
                             <useSystemClassLoader>false</useSystemClassLoader>
                             <reuseForks>true</reuseForks>
                         <forkCount>1</forkCount>
-                        <skipAfterFailureCount>1</skipAfterFailureCount>
                         <failIfNoTests>true</failIfNoTests>
-                        <testFailureIgnore>true</testFailureIgnore>
                         <reportFormat>plain</reportFormat>
                     </configuration>
                 </execution>

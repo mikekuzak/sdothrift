@@ -222,24 +222,44 @@ public class TypeMapper {
             }
         }
         
-        // Handle string conversions
+        // Handle string conversions: only supported scalars may become String.
+        // Arbitrary objects are rejected rather than rendered as identity strings.
         if (targetClass == String.class) {
-            return (T) value.toString();
+            if (value instanceof String || value instanceof Boolean 
+                    || value instanceof Number || value instanceof Character) {
+                return (T) value.toString();
+            }
+            throw new IllegalArgumentException("Cannot convert value of type " + 
+                value.getClass().getName() + " to target type " + targetClass.getName());
         }
         
         if (value instanceof String) {
-            String stringValue = (String) value;
-            if (targetClass == Boolean.class || targetClass == boolean.class) {
-                return (T) Boolean.valueOf(stringValue);
-            }
-            if (targetClass == Integer.class || targetClass == int.class) {
-                return (T) Integer.valueOf(stringValue);
-            }
-            if (targetClass == Long.class || targetClass == long.class) {
-                return (T) Long.valueOf(stringValue);
-            }
-            if (targetClass == Double.class || targetClass == double.class) {
-                return (T) Double.valueOf(stringValue);
+            String stringValue = ((String) value).trim();
+            try {
+                if (targetClass == Boolean.class || targetClass == boolean.class) {
+                    return (T) Boolean.valueOf(stringValue);
+                }
+                if (targetClass == Integer.class || targetClass == int.class) {
+                    return (T) Integer.valueOf(stringValue);
+                }
+                if (targetClass == Long.class || targetClass == long.class) {
+                    return (T) Long.valueOf(stringValue);
+                }
+                if (targetClass == Double.class || targetClass == double.class) {
+                    return (T) Double.valueOf(stringValue);
+                }
+                if (targetClass == Float.class || targetClass == float.class) {
+                    return (T) Float.valueOf(stringValue);
+                }
+                if (targetClass == Short.class || targetClass == short.class) {
+                    return (T) Short.valueOf(stringValue);
+                }
+                if (targetClass == Byte.class || targetClass == byte.class) {
+                    return (T) Byte.valueOf(stringValue);
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Cannot convert value of type " + 
+                    value.getClass().getName() + " to target type " + targetClass.getName(), e);
             }
         }
         

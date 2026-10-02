@@ -154,58 +154,66 @@ public class ThriftSDOConfiguration {
      */
     public static ThriftSDOConfiguration fromBindingContext(Map<String, Object> context) {
         ThriftSDOConfiguration config = new ThriftSDOConfiguration();
-        
+        config.overlayBindingContext(context);
+        return config;
+    }
+
+    /**
+     * Applies recognized configuration entries without resetting settings that
+     * are not present in the binding context.
+     *
+     * @param context the binding context map
+     */
+    public void overlayBindingContext(Map<String, Object> context) {
         if (context == null) {
-            return config;
+            return;
         }
-        
+
         // Extract configuration from context
         Object protocol = context.get("thrift.protocol");
         if (protocol instanceof String) {
-            config.setThriftProtocol(ThriftProtocol.fromString((String) protocol));
+            setThriftProtocol(ThriftProtocol.fromString((String) protocol));
         }
         
         Object nullStrategy = context.get("null.handling.strategy");
         if (nullStrategy instanceof String) {
-            config.setNullHandlingStrategy(NullHandlingStrategy.fromString((String) nullStrategy));
+            setNullHandlingStrategy(NullHandlingStrategy.fromString((String) nullStrategy));
         }
         
         Object collType = context.get("collection.type.preferences");
         if (collType instanceof String) {
-            config.setCollectionTypePreference(CollectionTypePreference.fromString((String) collType));
+            setCollectionTypePreference(CollectionTypePreference.fromString((String) collType));
         }
         
         Object caching = context.get("performance.caching.enabled");
         if (caching instanceof Boolean) {
-            config.setPerformanceCachingEnabled((Boolean) caching);
+            setPerformanceCachingEnabled((Boolean) caching);
         }
         
         Object cacheSize = context.get("performance.cache.size");
         if (cacheSize instanceof Integer) {
-            config.setMaxCacheSize((Integer) cacheSize);
+            setMaxCacheSize((Integer) cacheSize);
         }
         
         Object debugLogging = context.get("debug.logging.enabled");
         if (debugLogging instanceof Boolean) {
-            config.setDebugLoggingEnabled((Boolean) debugLogging);
+            setDebugLoggingEnabled((Boolean) debugLogging);
         }
         
         Object bufferSize = context.get("buffer.size");
         if (bufferSize instanceof Integer) {
-            config.setBufferSize((Integer) bufferSize);
+            setBufferSize((Integer) bufferSize);
         }
         
         Object encoding = context.get("character.encoding");
         if (encoding instanceof String) {
-            config.setCharacterEncoding((String) encoding);
+            setCharacterEncoding((String) encoding);
         }
         
         Object strictValidation = context.get("strict.validation.enabled");
         if (strictValidation instanceof Boolean) {
-            config.setStrictValidationEnabled((Boolean) strictValidation);
+            setStrictValidationEnabled((Boolean) strictValidation);
         }
-        
-        return config;
     }
     
     // Getters and Setters
@@ -247,7 +255,7 @@ public class ThriftSDOConfiguration {
     }
     
     public void setMaxCacheSize(int maxCacheSize) {
-        this.maxCacheSize = Math.max(1, maxCacheSize); // Ensure minimum size of 1
+        this.maxCacheSize = maxCacheSize;
     }
     
     public boolean isDebugLoggingEnabled() {

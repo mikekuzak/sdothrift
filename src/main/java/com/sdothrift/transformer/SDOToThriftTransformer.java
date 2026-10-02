@@ -1,26 +1,26 @@
 package com.sdothrift.transformer;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.exception.ThriftSDODataHandlerException;
-import com.sdothrift.serializer.ThriftSerializer;
 import org.apache.thrift.TBase;
+import org.apache.thrift.TFieldIdEnum;
+import org.apache.thrift.TFieldRequirementType;
 import org.apache.thrift.meta_data.FieldMetaData;
+import org.apache.thrift.meta_data.FieldValueMetaData;
+import org.apache.thrift.meta_data.ListMetaData;
+import org.apache.thrift.meta_data.MapMetaData;
+import org.apache.thrift.meta_data.SetMetaData;
+import org.apache.thrift.meta_data.StructMetaData;
 import org.apache.thrift.protocol.TType;
-import org.eclipse.emf.ecore.EAttribute;
 import org.eclipse.emf.ecore.EClass;
-import org.eclipse.emf.ecore.EObject;
-import org.eclipse.emf.ecore.EReference;
 import org.eclipse.emf.ecore.EStructuralFeature;
 import org.eclipse.emf.ecore.sdo.EDataObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,15 +28,15 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Transformer class for converting SDO DataObjects to Thrift objects.
- * Provides comprehensive type mapping and handles complex nested structures.
+ * Maps SDO directly to Thrift via the target's Thrift metadata (target metadata
+ * field -> SDO feature lookup -> presence/value -> recursive conversion ->
+ * setFieldValue) without routing through wire serialization.
  */
 public class SDOToThriftTransformer {
     
     private static final Logger logger = LoggerFactory.getLogger(SDOToThriftTransformer.class);
     
     private final ThriftSDOConfiguration configuration;
-    private final ThriftSerializer thriftSerializer;
-    private final ObjectMapper objectMapper;
     
     // Cache for Thrift class constructors to improve performance
     private final Map<String, Constructor<? extends TBase>> constructorCache = new ConcurrentHashMap<>();
@@ -51,12 +51,10 @@ public class SDOToThriftTransformer {
      */
     public SDOToThriftTransformer(ThriftSDOConfiguration configuration) {
         this.configuration = configuration;
-        this.thriftSerializer = new ThriftSerializer(configuration);
-        this.objectMapper = new ObjectMapper();
     }
     
     /**
-     * Transforms an SDO DataObject to a Thrift object.
+     * Transforms an SDO DataObject to a Thrift object using direct metadata mapping.
      *
      * @param dataObject the SDO DataObject to transform
      * @param targetThriftClass the target Thrift class
@@ -72,12 +70,42 @@ public class SDOToThriftTransformer {
         }
         
         try {
-            // Convert SDO to JSON for easier processing
-            JsonNode jsonNode = transformSDOToJson(dataObject);
+            T thriftObject = createThriftInstance(targetThriftClass);
             
-            // Convert JSON to Thrift
-            return transformJsonToThrift(jsonNode, targetThriftClass);
+            Map<?, ?> thriftFields = getThriftFieldMetaData(targetThriftClass);
+            EClass sdoClass = dataObject.eClass();
             
+            for (Map.Entry<?, ?> entry : thriftFields.entrySet()) {
+                FieldMetaData metaData = (FieldMetaData) entry.getValue();
+                TFieldIdEnum fieldId = (TFieldIdEnum) entry.getKey();
+                
+                EStructuralFeature feature = sdoClass.getEStructuralFeature(metaData.fieldName);
+                
+                if (feature == null) {
+                    if (metaData.requirementType == TFieldRequirementType.REQUIRED) {
+                        throw new IllegalArgumentException("Required field missing in SDO schema: " 
+                            + metaData.fieldName);
+                    }
+                    continue;
+                }
+                
+                if (dataObject.eIsSet(feature)) {
+                    Object sdoValue = dataObject.eGet(feature);
+                    if (sdoValue == null) {
+                        applyFieldNullPolicy(thriftObject, fieldId, metaData);
+                    } else {
+                        Object thriftValue = convertSDOValueToThrift(sdoValue, metaData.valueMetaData);
+                        setThriftFieldValue(thriftObject, fieldId, metaData.fieldName, thriftValue);
+                    }
+                } else {
+                    applyFieldNullPolicy(thriftObject, fieldId, metaData);
+                }
+            }
+            
+            return thriftObject;
+            
+        } catch (ThriftSDODataHandlerException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Failed to transform SDO to Thrift: {} -> {}", 
                 dataObject.eClass().getName(), targetThriftClass.getName(), e);
@@ -93,213 +121,191 @@ public class SDOToThriftTransformer {
     }
     
     /**
-     * Transforms an SDO DataObject to JSON representation.
+     * Creates a new instance of the target Thrift class via the cached constructor.
      *
-     * @param dataObject the SDO DataObject
-     * @return the JSON representation
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private JsonNode transformSDOToJson(EDataObject dataObject) throws ThriftSDODataHandlerException {
-        try {
-            ObjectNode jsonNode = objectMapper.createObjectNode();
-            EClass eClass = dataObject.eClass();
-            
-            for (EStructuralFeature feature : eClass.getEStructuralFeatures()) {
-                if (!dataObject.eIsSet(feature)) {
-                    handleNullSDOField(jsonNode, feature.getName(), feature);
-                    continue;
-                }
-                
-                Object value = dataObject.eGet(feature);
-                JsonNode fieldValue = transformSDOFieldToJson(value, feature);
-                
-                if (fieldValue != null) {
-                    jsonNode.set(feature.getName(), fieldValue);
-                }
-            }
-            
-            return jsonNode;
-            
-        } catch (Exception e) {
-            logger.error("Failed to transform SDO to JSON: {}", dataObject.eClass().getName(), e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.SDO_PROCESSING_ERROR,
-                "Failed to transform SDO to JSON: " + dataObject.eClass().getName(),
-                "SDO class: " + dataObject.eClass().getName(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms an SDO field value to JSON.
-     *
-     * @param value the field value
-     * @param feature the structural feature
-     * @return the JSON representation
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private JsonNode transformSDOFieldToJson(Object value, EStructuralFeature feature) 
-            throws ThriftSDODataHandlerException {
-        
-        try {
-            if (value == null) {
-                return objectMapper.getNodeFactory().nullNode();
-            }
-            
-            if (feature instanceof EAttribute) {
-                // Handle basic attributes
-                return objectMapper.valueToTree(value);
-                
-            } else if (feature instanceof EReference) {
-                // Handle nested objects (references)
-                if (value instanceof EDataObject) {
-                    return transformSDOToJson((EDataObject) value);
-                } else if (value instanceof Collection) {
-                    // Handle collection of nested objects
-                    return transformCollectionToJson((Collection<?>) value);
-                } else {
-                    return objectMapper.valueToTree(value);
-                }
-            } else {
-                // Default handling
-                return objectMapper.valueToTree(value);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Failed to transform SDO field to JSON: {}", feature.getName(), e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.JSON_PROCESSING_ERROR,
-                "Failed to transform SDO field to JSON: " + feature.getName(),
-                "Feature: " + feature.getName() + ", Type: " + feature.getClass().getName(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms a collection to JSON array.
-     *
-     * @param collection the collection to transform
-     * @return the JSON array
-     * @throws ThriftSDODataHandlerException if transformation fails
-     */
-    private JsonNode transformCollectionToJson(Collection<?> collection) 
-            throws ThriftSDODataHandlerException {
-        
-        try {
-            return objectMapper.valueToTree(collection);
-        } catch (Exception e) {
-            logger.error("Failed to transform collection to JSON", e);
-            throw new ThriftSDODataHandlerException(
-                ThriftSDODataHandlerException.ErrorCodes.JSON_PROCESSING_ERROR,
-                "Failed to transform collection to JSON",
-                "Collection type: " + collection.getClass().getName(),
-                e
-            );
-        }
-    }
-    
-    /**
-     * Transforms JSON to a Thrift object.
-     *
-     * @param jsonNode the JSON node
-     * @param targetThriftClass the target Thrift class
+     * @param thriftClass the target Thrift class
      * @param <T> the type of the Thrift object
-     * @return the Thrift object
-     * @throws ThriftSDODataHandlerException if transformation fails
+     * @return a new Thrift instance
+     * @throws ThriftSDODataHandlerException if instantiation fails
      */
-    @SuppressWarnings("unchecked")
-    private <T extends TBase> T transformJsonToThrift(JsonNode jsonNode, Class<T> targetThriftClass) 
+    private <T extends TBase> T createThriftInstance(Class<T> thriftClass) 
             throws ThriftSDODataHandlerException {
-        
         try {
-            // Convert JSON to string for Thrift deserializer
-            String jsonString = objectMapper.writeValueAsString(jsonNode);
-            return thriftSerializer.deserializeFromString(jsonString, targetThriftClass);
-            
+            return getThriftConstructor(thriftClass).newInstance();
         } catch (Exception e) {
-            logger.error("Failed to transform JSON to Thrift: {}", targetThriftClass.getName(), e);
             throw new ThriftSDODataHandlerException(
                 ThriftSDODataHandlerException.ErrorCodes.THRIFT_PROCESSING_ERROR,
-                "Failed to transform JSON to Thrift: " + targetThriftClass.getName(),
-                "Thrift class: " + targetThriftClass.getName(),
+                "Failed to instantiate Thrift class: " + thriftClass.getName(),
+                "Thrift class: " + thriftClass.getName(),
                 e
             );
         }
     }
     
     /**
-     * Handles null field values according to configuration.
+     * Sets a field value on a Thrift object. Fails loudly on failure; never
+     * logs-and-continues.
      *
-     * @param jsonNode the JSON node to modify
-     * @param fieldName the field name
-     * @param feature the structural feature
+     * @param thriftObject the Thrift object
+     * @param fieldId the field identifier
+     * @param fieldName the field name (for error reporting)
+     * @param value the value to set
      */
-    private void handleNullSDOField(ObjectNode jsonNode, String fieldName, EStructuralFeature feature) {
-        switch (configuration.getNullHandlingStrategy()) {
-            case PRESERVE:
-                jsonNode.set(fieldName, objectMapper.getNodeFactory().nullNode());
-                break;
-            case DEFAULT:
-                Object defaultValue = getDefaultValueForFeature(feature);
-                if (defaultValue != null) {
-                    jsonNode.set(fieldName, objectMapper.valueToTree(defaultValue));
-                }
-                break;
-            case OMIT:
-                // Don't add anything - field will be omitted
-                break;
-            case ERROR:
-                throw new IllegalArgumentException("Null value encountered for field: " + fieldName);
-            default:
-                jsonNode.set(fieldName, objectMapper.getNodeFactory().nullNode());
+    private void setThriftFieldValue(TBase thriftObject, TFieldIdEnum fieldId, 
+            String fieldName, Object value) {
+        try {
+            thriftObject.setFieldValue(fieldId, value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to set Thrift field value: " + fieldName, e);
         }
     }
     
     /**
-     * Gets the default value for an SDO structural feature.
+     * Applies the configured null policy for an unset or null SDO field.
      *
-     * @param feature the structural feature
+     * @param thriftObject the Thrift object
+     * @param fieldId the field identifier
+     * @param metaData the field metadata
+     */
+    private void applyFieldNullPolicy(TBase thriftObject, TFieldIdEnum fieldId, FieldMetaData metaData) {
+        switch (configuration.getNullHandlingStrategy()) {
+            case ERROR:
+                throw new IllegalArgumentException("Null value encountered for field: " + metaData.fieldName);
+            case DEFAULT:
+                setThriftFieldValue(thriftObject, fieldId, metaData.fieldName, 
+                    getDefaultValueForThriftType(metaData.valueMetaData));
+                break;
+            case PRESERVE:
+            case OMIT:
+            default:
+                // Leave the field unset
+                break;
+        }
+    }
+    
+    /**
+     * Gets the default value for a Thrift type.
+     *
+     * @param metaData the value metadata
      * @return the default value
      */
-    private Object getDefaultValueForFeature(EStructuralFeature feature) {
-        try {
-            if (feature instanceof EAttribute) {
-                EAttribute attribute = (EAttribute) feature;
-                Class<?> instanceClass = attribute.getEType().getInstanceClass();
-                
-                if (instanceClass == boolean.class || instanceClass == Boolean.class) {
-                    return false;
-                } else if (instanceClass == byte.class || instanceClass == Byte.class) {
-                    return (byte) 0;
-                } else if (instanceClass == short.class || instanceClass == Short.class) {
-                    return (short) 0;
-                } else if (instanceClass == int.class || instanceClass == Integer.class) {
-                    return 0;
-                } else if (instanceClass == long.class || instanceClass == Long.class) {
-                    return 0L;
-                } else if (instanceClass == float.class || instanceClass == Float.class) {
-                    return 0.0f;
-                } else if (instanceClass == double.class || instanceClass == Double.class) {
-                    return 0.0;
-                } else if (instanceClass == String.class) {
-                    return "";
-                }
-            } else if (feature instanceof EReference) {
-                EReference reference = (EReference) feature;
-                if (reference.isMany()) {
-                    return new java.util.ArrayList<>();
-                } else {
-                    return null;
-                }
-            }
-            
-            return null;
-        } catch (Exception e) {
-            logger.warn("Failed to get default value for feature: {}", feature.getName(), e);
+    private Object getDefaultValueForThriftType(FieldValueMetaData metaData) {
+        if (metaData instanceof ListMetaData) {
+            return new java.util.ArrayList<>();
+        }
+        if (metaData instanceof SetMetaData) {
+            return new LinkedHashSet<>();
+        }
+        if (metaData instanceof MapMetaData) {
+            return new LinkedHashMap<>();
+        }
+        if (metaData instanceof StructMetaData) {
+            return null; // Do not recursively invent nested structs
+        }
+        switch (metaData.type) {
+            case TType.BOOL:
+                return false;
+            case TType.BYTE:
+                return (byte) 0;
+            case TType.I16:
+                return (short) 0;
+            case TType.I32:
+                return 0;
+            case TType.I64:
+                return 0L;
+            case TType.DOUBLE:
+                return 0.0;
+            case TType.STRING:
+                return "";
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * Converts an SDO value to its Thrift representation, recursing on the
+     * element/key/value metadata (never on the parent container type).
+     *
+     * @param value the SDO value
+     * @param metaData the value metadata describing the target
+     * @return the Thrift representation
+     */
+    @SuppressWarnings("unchecked")
+    private Object convertSDOValueToThrift(Object value, FieldValueMetaData metaData) 
+            throws ThriftSDODataHandlerException {
+        if (value == null) {
             return null;
         }
+        
+        if (metaData instanceof StructMetaData) {
+            if (!(value instanceof EDataObject)) {
+                throw new IllegalArgumentException("Expected EDataObject for struct field but found: " 
+                    + value.getClass().getName());
+            }
+            return transformToThrift((EDataObject) value, 
+                (Class<? extends TBase>) ((StructMetaData) metaData).structClass);
+        }
+        
+        if (metaData instanceof ListMetaData) {
+            if (!(value instanceof List)) {
+                throw new IllegalArgumentException("Expected List for list field but found: " 
+                    + value.getClass().getName());
+            }
+            List<Object> thriftList = new java.util.ArrayList<>();
+            for (Object element : (List<?>) value) {
+                thriftList.add(convertSDOValueToThrift(element, ((ListMetaData) metaData).elemMetaData));
+            }
+            return thriftList;
+        }
+        
+        if (metaData instanceof SetMetaData) {
+            // SDO models sets as lists; reconstruct the Java Set
+            if (!(value instanceof List) && !(value instanceof java.util.Set)) {
+                throw new IllegalArgumentException("Expected collection for set field but found: " 
+                    + value.getClass().getName());
+            }
+            Set<Object> thriftSet = new LinkedHashSet<>();
+            for (Object element : (java.util.Collection<?>) value) {
+                thriftSet.add(convertSDOValueToThrift(element, ((SetMetaData) metaData).elemMetaData));
+            }
+            return thriftSet;
+        }
+        
+        if (metaData instanceof MapMetaData) {
+            // Maps are represented as lists of PropertiesEntry{key,value} SDO objects
+            if (!(value instanceof List)) {
+                throw new IllegalArgumentException("Expected entry list for map field but found: " 
+                    + value.getClass().getName());
+            }
+            MapMetaData mapMetaData = (MapMetaData) metaData;
+            Map<Object, Object> thriftMap = new LinkedHashMap<>();
+            for (Object entryObject : (List<?>) value) {
+                if (!(entryObject instanceof EDataObject)) {
+                    throw new IllegalArgumentException("Expected EDataObject map entry but found: " 
+                        + (entryObject == null ? "null" : entryObject.getClass().getName()));
+                }
+                EDataObject entry = (EDataObject) entryObject;
+                thriftMap.put(
+                    convertSDOValueToThrift(getEntryFeatureValue(entry, "key"), mapMetaData.keyMetaData),
+                    convertSDOValueToThrift(getEntryFeatureValue(entry, "value"), mapMetaData.valueMetaData));
+            }
+            return thriftMap;
+        }
+        
+        // Base scalar
+        Class<?> javaType = TypeMapper.mapThriftToSDO(metaData.type);
+        if (javaType == null) {
+            throw new IllegalArgumentException("Unsupported Thrift field type: " + metaData.type);
+        }
+        return TypeMapper.convertValue(value, javaType);
+    }
+    
+    private Object getEntryFeatureValue(EDataObject entry, String featureName) {
+        EStructuralFeature feature = entry.eClass().getEStructuralFeature(featureName);
+        if (feature == null) {
+            throw new IllegalArgumentException("Map entry feature not found: " + featureName);
+        }
+        return entry.eGet(feature);
     }
     
     /**
@@ -307,22 +313,36 @@ public class SDOToThriftTransformer {
      *
      * @param thriftClass the Thrift class
      * @return the field metadata map
+     * @throws ThriftSDODataHandlerException if the metadata cannot be read
      */
-    private Map<?, ?> getThriftFieldMetaData(Class<? extends TBase> thriftClass) {
+    private Map<?, ?> getThriftFieldMetaData(Class<? extends TBase> thriftClass) 
+            throws ThriftSDODataHandlerException {
         String className = thriftClass.getName();
-        return fieldMetaDataCache.computeIfAbsent(className, k -> {
-            try {
-                Field metaDataField = thriftClass.getField("metaDataMap");
-                return (Map<?, ?>) metaDataField.get(null);
-            } catch (Exception e) {
-                logger.error("Failed to get field metadata for class: " + className, e);
-                return new java.util.HashMap<>();
-            }
-        });
+        Map<?, ?> cached = fieldMetaDataCache.get(className);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            java.lang.reflect.Field metaDataField = thriftClass.getField("metaDataMap");
+            Map<?, ?> metaData = (Map<?, ?>) metaDataField.get(null);
+            fieldMetaDataCache.put(className, metaData);
+            return metaData;
+        } catch (Exception e) {
+            logger.error("Failed to get field metadata for class: {}", className, e);
+            throw new ThriftSDODataHandlerException(
+                ThriftSDODataHandlerException.ErrorCodes.THRIFT_PROCESSING_ERROR,
+                "Failed to get field metadata for class: " + className,
+                "Thrift class: " + className,
+                e
+            );
+        }
     }
     
     /**
      * Validates if the SDO DataObject can be transformed to the target Thrift class.
+     * Each REQUIRED Thrift field is verified by NAME: the SDO feature must exist,
+     * its value/presence must be acceptable (DEFAULT policy considered), and the
+     * value must convert cleanly. Valid zero/false/empty-string values are accepted.
      *
      * @param dataObject the SDO DataObject
      * @param targetThriftClass the target Thrift class
@@ -334,41 +354,60 @@ public class SDOToThriftTransformer {
         }
         
         try {
-            // Get Thrift field metadata
             Map<?, ?> thriftFields = getThriftFieldMetaData(targetThriftClass);
             
-            // Get SDO structural features
-            List<EStructuralFeature> sdoFeatures = dataObject.eClass().getEStructuralFeatures();
-            
-            // Basic validation: check if SDO has at least the required fields
-            int requiredThriftFields = 0;
-            for (Object entry : thriftFields.values()) {
-                if (entry instanceof FieldMetaData) {
-                    FieldMetaData metaData = (FieldMetaData) entry;
-                    if (metaData.requirementType == org.apache.thrift.TFieldRequirementType.REQUIRED) {
-                        requiredThriftFields++;
-                    }
+            for (Object value : thriftFields.values()) {
+                if (!(value instanceof FieldMetaData)) {
+                    continue;
+                }
+                FieldMetaData metaData = (FieldMetaData) value;
+                if (metaData.requirementType != TFieldRequirementType.REQUIRED) {
+                    continue;
+                }
+                if (!isRequiredFieldSatisfied(dataObject, metaData)) {
+                    return false;
                 }
             }
             
-            int availableSdoFields = 0;
-            for (EStructuralFeature feature : sdoFeatures) {
-                if (dataObject.eIsSet(feature)) {
-                    availableSdoFields++;
-                }
-            }
-            
-            if (configuration.isStrictValidationEnabled()) {
-                return availableSdoFields >= requiredThriftFields;
-            } else {
-                return true; // Lenient validation
-            }
+            return true;
             
         } catch (Exception e) {
             logger.warn("Validation failed for transformation: {} -> {}", 
                 dataObject.eClass().getName(), targetThriftClass.getName(), e);
             return false;
         }
+    }
+    
+    /**
+     * Checks a single REQUIRED Thrift field against the SDO by name.
+     *
+     * @param dataObject the SDO DataObject
+     * @param metaData the required field metadata
+     * @return true if the field is satisfied
+     */
+    private boolean isRequiredFieldSatisfied(EDataObject dataObject, FieldMetaData metaData) {
+        EStructuralFeature feature = dataObject.eClass().getEStructuralFeature(metaData.fieldName);
+        if (feature == null) {
+            return false;
+        }
+        
+        if (dataObject.eIsSet(feature)) {
+            Object sdoValue = dataObject.eGet(feature);
+            if (sdoValue == null) {
+                // Acceptable only if the DEFAULT policy will supply a value
+                return configuration.getNullHandlingStrategy() == ThriftSDOConfiguration.NullHandlingStrategy.DEFAULT;
+            }
+            try {
+                convertSDOValueToThrift(sdoValue, metaData.valueMetaData);
+                return true;
+            } catch (Exception e) {
+                logger.debug("Required field '{}' cannot be converted: {}", metaData.fieldName, e.getMessage());
+                return false;
+            }
+        }
+        
+        // Unset required field: acceptable only under DEFAULT policy
+        return configuration.getNullHandlingStrategy() == ThriftSDOConfiguration.NullHandlingStrategy.DEFAULT;
     }
     
     /**
@@ -384,16 +423,25 @@ public class SDOToThriftTransformer {
             throws ThriftSDODataHandlerException {
         
         String className = thriftClass.getName();
-        return (Constructor<T>) constructorCache.computeIfAbsent(className, k -> {
-            try {
-                Constructor<? extends TBase> constructor = (Constructor<? extends TBase>) thriftClass.getDeclaredConstructor();
-                constructor.setAccessible(true);
-                return constructor;
-            } catch (Exception e) {
-                logger.error("Failed to get constructor for Thrift class: {}", className, e);
-                throw new RuntimeException("Failed to get constructor for Thrift class: " + className, e);
-            }
-        });
+        Constructor<? extends TBase> cached = constructorCache.get(className);
+        if (cached != null) {
+            return (Constructor<T>) cached;
+        }
+        try {
+            Constructor<? extends TBase> constructor = 
+                (Constructor<? extends TBase>) thriftClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            constructorCache.put(className, constructor);
+            return (Constructor<T>) constructor;
+        } catch (Exception e) {
+            logger.error("Failed to get constructor for Thrift class: {}", className, e);
+            throw new ThriftSDODataHandlerException(
+                ThriftSDODataHandlerException.ErrorCodes.THRIFT_PROCESSING_ERROR,
+                "Failed to get constructor for Thrift class: " + className,
+                "Thrift class: " + className,
+                e
+            );
+        }
     }
     
     /**
@@ -406,15 +454,16 @@ public class SDOToThriftTransformer {
     }
     
     /**
-     * Gets cache statistics for monitoring purposes.
+     * Gets cache statistics for monitoring purposes. Global TypeMapper statistics
+     * are merged first so the local "fieldMetaDataCacheSize" key is preserved.
      *
      * @return a map containing cache statistics
      */
     public Map<String, Integer> getCacheStatistics() {
         Map<String, Integer> stats = new java.util.HashMap<>();
+        stats.putAll(TypeMapper.getCacheStatistics());
         stats.put("constructorCacheSize", constructorCache.size());
         stats.put("fieldMetaDataCacheSize", fieldMetaDataCache.size());
-        stats.putAll(TypeMapper.getCacheStatistics());
         return stats;
     }
     
