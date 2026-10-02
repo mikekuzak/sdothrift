@@ -1,174 +1,131 @@
 # SDO Thrift Data Handler
 
-Custom IBM Integration Designer data handler for converting Apache Thrift Objects (v0.21.0) to Service Data Objects (SDO) and back.
+An IBM DataHandler implementation for transforming Apache Thrift objects (libthrift 0.21.0) and SDO DataObjects.
 
-## Overview
+## Scope
 
-This implementation provides a comprehensive solution for bidirectional transformation between Thrift objects and SDO DataObjects, following IBM's DataHandler pattern.
-Based on:  
-* [https://www.ibm.com/docs/en/baw/25.0.x?topic=registries-creating-custom-data-handler](https://www.ibm.com/docs/en/baw/25.0.x?topic=registries-creating-custom-data-handler)
-* [https://github.com/apache/thrift](https://github.com/apache/thrift)
+The implementation supports bidirectional transformation for the primitive Thrift types, lists, sets, maps, and structs listed below. It does not support every Thrift type or every Thrift/SDO deployment scenario; see [Known limitations](#known-limitations).
 
-## Features
+The handler's textual JSON boundary uses ordinary JSON field names. Separately, the serializer byte API (`serializeToBytes` / `deserializeFromBytes`) uses the configured Thrift wire protocol: BINARY, COMPACT, or JSON. SIMPLE_JSON is write-only; attempting to read it fails explicitly.
 
-- **Bidirectional Transformation**: Thrift ↔ SDO conversion
-- **Type Mapping**: Complete support for all Thrift base types, containers, and structs
-- **Input Flexibility**: Supports InputStream, byte[], Reader, String, and object inputs
-- **Configuration**: Extensive configuration options for various scenarios
-- **Performance**: Optimized for high-throughput environments
-- **Testing**: Comprehensive unit and integration test coverage
+For handler JSON-to-SDO conversion, a Thrift schema class must be supplied in `options` or in the binding context under `thrift.target.class`. Without it, the handler throws `CONFIGURATION_ERROR`.
 
-## Quick Start
+## Requirements and dependencies
 
-### Installation
+- Java source and target level: 1.8.
+- Apache Thrift (`libthrift`): 0.21.0.
+- EMF: `org.eclipse.emf.ecore` 2.23.0, `commonj-sdo` 2.1.0, `ecore-sdo` 2.1.1, and `ecore-change` 2.1.0.
+- Other runtime dependencies: `jackson-databind` 2.15.2, `commons-lang3` 3.12.0, `commons-collections4` 4.4, and `slf4j-api` 2.0.7. `logback-classic` is used for tests.
+- `jars/soacore_apis.jar` is configured with Maven `system` scope. It supplies IBM's `commonj.connector.runtime.DataHandler`, `BindingContext`, and `DataHandlerException`, plus `com.ibm.websphere.bo.*`. It is available to compile and test, but Maven does not package it in the artifact. This IBM jar is proprietary and is **not** committed to or redistributed with this repository (the `jars/` directory is git-ignored); supply it locally, or from your internal Maven repository, before building.
 
-```bash
-mvn clean install
-```
+## Type mapping
 
-### Basic Usage
-
-```java
-ThriftSDODataHandler dataHandler = new ThriftSDODataHandler();
-Map<String, Object> context = new HashMap<>();
-dataHandler.setBindingContext(context);
-
-// Thrift to SDO
-DataObject sdoResult = (DataObject) dataHandler.transform(thriftObject, DataObject.class, null);
-
-// SDO to Thrift
-TBase thriftResult = (TBase) dataHandler.transform(sdoObject, ThriftClass.class, null);
-```
-
-## Type Mapping
-
-| Thrift Type | SDO Type | Notes |
-|-------------|----------|-------|
-| `bool` | `Boolean` | Direct mapping |
-| `byte` | `Byte` | Direct mapping |
-| `i16` | `Short` | Direct mapping |
-| `i32` | `Integer` | Direct mapping |
-| `i64` | `Long` | Direct mapping |
-| `double` | `Double` | Direct mapping |
-| `string` | `String` | Direct mapping |
-| `list<T>` | `List<T>` | Array representation |
-| `set<T>` | `Set<T>` | Unique elements |
-| `map<K,V>` | `Map<K,V>` | Nested object structure |
-| `struct` | `DataObject` | Nested SDO object |
-| `union` | `DataObject` | Polymorphic handling |
+| Thrift type | SDO representation | Thrift reconstruction / notes |
+|-------------|--------------------|-------------------------------|
+| `bool` | `Boolean` | `Boolean` |
+| `byte` | `Byte` | `Byte` |
+| `i16` | `Short` | `Short` |
+| `i32` | `Integer` | `Integer` |
+| `i64` | `Long` | `Long` |
+| `double` | `Double` | `Double` |
+| `string` | `String` | `String`; binary strings are rejected |
+| `list<T>` | Many-valued SDO property (`java.util.List` semantics) | List; duplicates are preserved |
+| `set<T>` | Many-valued UNIQUE SDO property, represented as a list | `java.util.Set` |
+| `map<K,V>` | Containment list of entry DataObjects, each with `key` and `value` features | `java.util.Map`; non-string keys are rejected |
+| `struct` | Nested SDO `DataObject` | Nested struct |
+| `union` | Not specifically handled | No union-specific code exists |
+| `enum` | Unsupported | Explicitly rejected as unsupported metadata |
 
 ## Configuration
 
-### Binding Context Properties
+The handler recognizes these binding-context keys:
+
+| Key | Status |
+|-----|--------|
+| `thrift.protocol` | Consumed by transformation logic |
+| `null.handling.strategy` | Consumed by transformation logic |
+| `collection.type.preferences` | Read into configuration only; not yet consumed |
+| `performance.caching.enabled` | Read into configuration only; not yet consumed |
+| `performance.cache.size` | Read into configuration only; not yet consumed |
+| `debug.logging.enabled` | Read into configuration only; not yet consumed |
+| `buffer.size` | Consumed by transformation logic |
+| `character.encoding` | Consumed by transformation logic |
+| `strict.validation.enabled` | Consumed by transformation logic |
+
+Example:
 
 ```java
 Map<String, Object> context = new HashMap<>();
-context.put("thrift.protocol", "binary");
-context.put("null.handling.strategy", "preserve");
-context.put("collection.type.preferences", "list");
-context.put("performance.caching.enabled", "true");
+context.put("thrift.protocol", "BINARY");
+context.put("null.handling.strategy", "PRESERVE");
+context.put("buffer.size", 8192);
+context.put("character.encoding", "UTF-8");
+context.put("strict.validation.enabled", true);
+dataHandler.setBindingContext(context);
 ```
 
 ## Testing
 
-### Run All Tests
-```bash
-mvn clean verify
-```
+Run the unit tests with:
 
-### Unit Tests Only
 ```bash
 mvn clean test
 ```
 
-### Integration Tests Only
-```bash
-mvn clean failsafe:integration-test
+The verified offline run, `mvn -o clean test`, completed with **106 tests, 0 failures, 0 errors, 0 skipped**, and `BUILD SUCCESS`. The test suites are `ThriftSDODataHandlerTest` (27), `ThriftToSDOTransformerTest` (23), `SDOToThriftTransformerTest` (17), and `TypeMapperTest` (39). There are no integration tests or performance tests. Coverage has not been measured; a configured JaCoCo plugin is not evidence of a coverage percentage.
+
+## IBM Integration Designer / BAW deployment
+
+The IBM API jar is a local, system-scoped compile/test dependency and is not bundled in the project artifact. The actual IBM runtime must provide the IBM APIs when deploying the handler.
+
+1. Build the artifact with `mvn clean package`. The recorded successful verification is `mvn -o clean test`; packaging and deployment have not been verified in an IBM runtime.
+2. Copy the resulting project artifact to the IBM Integration Designer/BAW runtime's library location.
+3. Register `com.sdothrift.ThriftSDODataHandler` as a custom data handler using the product's data-handler configuration.
+4. Configure the binding properties required by the application.
+
+The deployment steps describe the intended integration procedure; this project has not been validated inside an IBM BAW or Integration Designer runtime.
+
+## Project structure
+
+```text
+src/main/java/com/sdothrift/
+├── ThriftSDODataHandler.java
+├── config/ThriftSDOConfiguration.java
+├── exception/ThriftSDODataHandlerException.java
+├── serializer/ThriftSerializer.java
+├── transformer/
+│   ├── SDOToThriftTransformer.java
+│   ├── ThriftToSDOTransformer.java
+│   └── TypeMapper.java
+└── util/Java8CompatibilityUtils.java
+
+src/test/java/com/sdothrift/
+├── ThriftSDODataHandlerTest.java
+├── transformer/
+│   ├── SDOToThriftTransformerTest.java
+│   ├── ThriftToSDOTransformerTest.java
+│   └── TypeMapperTest.java
+└── util/
+    ├── TestDataGenerator.java
+    ├── TestFailureAnalyzer.java
+    ├── TestSDOFixtures.java
+    ├── BasicTestRunner.java
+    └── SimpleTestRunner.java
 ```
 
-### Coverage Report
-```bash
-mvn clean test jacoco:report
-```
+`BasicTestRunner`, `SimpleTestRunner`, and `TestFailureAnalyzer` are standalone main-method utilities, not JUnit tests. There is no test `serializer` or `integration` package.
 
-## IBM Integration Designer Integration
+## Performance
 
-### Registration Steps
+No performance benchmarks have been measured or published.
 
-1. Build the JAR with dependencies:
-```bash
-mvn clean package
-```
+## Verification status
 
-2. Copy the JAR to IBM Integration Designer's library directory
+Verification is unit-level only. The project has not been validated inside an IBM BAW or Integration Designer runtime.
 
-3. Register the custom data handler in IBM Integration Designer:
-   - Navigate to Window → Preferences → Integration Designer → Data Handlers
-   - Add new data handler: `com.sdothrift.ThriftSDODataHandler`
+## Known limitations
 
-4. Configure binding properties as needed
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── main/java/com/sdothrift/
-│   ├── ThriftSDODataHandler.java
-│   ├── transformer/
-│   ├── serializer/
-│   ├── exception/
-│   └── config/
-└── test/java/com/sdothrift/
-    ├── ThriftSDODataHandlerTest.java
-    ├── transformer/
-    ├── serializer/
-    ├── integration/
-    └── util/
-```
-
-### Building from Source
-
-```bash
-git clone <repository-url>
-cd sdothrift
-mvn clean install
-```
-
-## Performance Benchmarks
-
-Based on testing with typical enterprise data structures:
-
-- **Small Objects** (< 1KB): ~0.5ms transformation time
-- **Medium Objects** (1-10KB): ~2ms transformation time  
-- **Large Objects** (> 10KB): ~10ms transformation time
-- **Memory Overhead**: ~15% additional memory during transformation
-
-## Troubleshooting
-
-### Common Issues
-
-1. **ClassCastException**: Check type mapping configuration
-2. **NullPointerException**: Verify null handling strategy
-3. **Performance Issues**: Enable caching in configuration
-4. **Dependency Conflicts**: Ensure compatible library versions
-
-### Debug Logging
-
-Enable debug logging by setting:
-```java
-System.setProperty("com.sdothrift.level", "DEBUG");
-```
-
-## Support
-
-For issues and questions:
-1. Check test cases for usage examples
-2. Review configuration options
-3. Enable debug logging for detailed tracing
-4. Consult IBM Integration Designer documentation for data handler integration
-
-## License
-
-AGPL-3.0 license
+- Thrift unions, enums, and binary strings are unsupported (enums and binary strings are explicitly rejected; unions have no union-specific handling).
+- `collection.type.preferences`, `performance.caching.enabled`, `performance.cache.size`, and `debug.logging.enabled` are not yet wired into transformation behavior.
+- `jars/soacore_apis.jar` is system-scoped and is not packaged into the artifact. Deployment requires the IBM runtime to supply its IBM APIs.
+- No performance benchmark or coverage percentage is available.
