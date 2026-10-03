@@ -5,6 +5,7 @@ import com.sdothrift.exception.ThriftSDODataHandlerException;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TFieldIdEnum;
 import org.apache.thrift.TFieldRequirementType;
+import org.apache.thrift.meta_data.EnumMetaData;
 import org.apache.thrift.meta_data.FieldMetaData;
 import org.apache.thrift.meta_data.FieldValueMetaData;
 import org.apache.thrift.meta_data.ListMetaData;
@@ -19,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Constructor;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -290,6 +292,17 @@ public class SDOToThriftTransformer {
                     convertSDOValueToThrift(getEntryFeatureValue(entry, "value"), mapMetaData.valueMetaData));
             }
             return thriftMap;
+        }
+
+        if (metaData instanceof EnumMetaData) {
+            return TypeMapper.enumFromValue(((EnumMetaData) metaData).enumClass,
+                ((Number) value).intValue());
+        }
+        if (metaData.type == TType.UUID) {
+            return java.util.UUID.fromString(value.toString());
+        }
+        if (metaData.type == TType.STRING && metaData.isBinary()) {
+            return Base64.getDecoder().decode(value.toString());
         }
         
         // Base scalar

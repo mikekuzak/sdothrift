@@ -5,6 +5,7 @@ import com.sdothrift.exception.ThriftSDODataHandlerException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TFieldIdEnum;
+import org.apache.thrift.meta_data.EnumMetaData;
 import org.apache.thrift.meta_data.FieldMetaData;
 import org.apache.thrift.meta_data.FieldValueMetaData;
 import org.apache.thrift.meta_data.ListMetaData;
@@ -29,6 +30,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.nio.ByteBuffer;
+import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -184,6 +187,27 @@ public class ThriftToSDOTransformer {
                 entries.add(entryObject);
             }
             return entries;
+        }
+
+        if (metaData instanceof EnumMetaData) {
+            return TypeMapper.enumValue(value);
+        }
+        if (metaData.type == TType.UUID) {
+            return value.toString();
+        }
+        if (metaData.type == TType.STRING && metaData.isBinary()) {
+            byte[] bytes;
+            if (value instanceof byte[]) {
+                bytes = (byte[]) value;
+            } else if (value instanceof ByteBuffer) {
+                ByteBuffer buffer = ((ByteBuffer) value).duplicate();
+                bytes = new byte[buffer.remaining()];
+                buffer.get(bytes);
+            } else {
+                throw new IllegalArgumentException("Expected byte[] or ByteBuffer for binary field but found: "
+                    + value.getClass().getName());
+            }
+            return Base64.getEncoder().encodeToString(bytes);
         }
         
         // Base scalar
@@ -465,12 +489,15 @@ public class ThriftToSDOTransformer {
             case TType.I16:
                 return EcorePackage.eINSTANCE.getEShortObject();
             case TType.I32:
+            case TType.ENUM:
                 return EcorePackage.eINSTANCE.getEIntegerObject();
             case TType.I64:
                 return EcorePackage.eINSTANCE.getELongObject();
             case TType.DOUBLE:
                 return EcorePackage.eINSTANCE.getEDoubleObject();
             case TType.STRING:
+                return EcorePackage.eINSTANCE.getEString();
+            case TType.UUID:
                 return EcorePackage.eINSTANCE.getEString();
             default:
                 throw new IllegalArgumentException("Unsupported Thrift type for SDO mapping: " + thriftType);

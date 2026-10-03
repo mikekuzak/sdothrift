@@ -27,6 +27,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.UUID;
 
 /**
  * Utility class for generating test data for unit tests.
@@ -616,6 +620,285 @@ return java.util.Objects.hash(value, description);
             return this.value.compareTo(other.value);
     }
     }
+
+    /** Thrift enum used by tests for enum-to-integer mapping. */
+    public enum Color implements org.apache.thrift.TEnum {
+        RED(1),
+        GREEN(2),
+        BLUE(3);
+
+        private final int value;
+
+        Color(int value) {
+            this.value = value;
+        }
+
+        @Override
+        public int getValue() {
+            return value;
+        }
+
+        public static Color findByValue(int value) {
+            for (Color color : values()) {
+                if (color.value == value) return color;
+            }
+            return null;
+        }
+    }
+
+    /** Thrift struct covering enum, binary, and UUID mappings. */
+    public static class TestTypesStruct implements TBase<TestTypesStruct, TestTypesStruct._Fields> {
+        public enum _Fields implements org.apache.thrift.TFieldIdEnum {
+            ID((short) 1, "id"),
+            COLOR((short) 2, "color"),
+            DATA((short) 3, "data"),
+            UUID((short) 4, "uuid");
+
+            private final short thriftId;
+            private final String fieldName;
+
+            _Fields(short thriftId, String fieldName) {
+                this.thriftId = thriftId;
+                this.fieldName = fieldName;
+            }
+
+            @Override
+            public short getThriftFieldId() {
+                return thriftId;
+            }
+
+            @Override
+            public String getFieldName() {
+                return fieldName;
+            }
+
+            public static _Fields findByThriftId(int fieldId) {
+                for (_Fields field : values()) {
+                    if (field.thriftId == fieldId) return field;
+                }
+                return null;
+            }
+
+            public static _Fields findByName(String name) {
+                for (_Fields field : values()) {
+                    if (field.fieldName.equals(name)) return field;
+                }
+                return null;
+            }
+        }
+
+        public static final Map<_Fields, FieldMetaData> metaDataMap;
+
+        static {
+            Map<_Fields, FieldMetaData> fields = new HashMap<>();
+            fields.put(_Fields.ID, new FieldMetaData("id", org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.I32)));
+            fields.put(_Fields.COLOR, new FieldMetaData("color", org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new org.apache.thrift.meta_data.EnumMetaData(TType.ENUM, Color.class)));
+            fields.put(_Fields.DATA, new FieldMetaData("data", org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.STRING, true)));
+            fields.put(_Fields.UUID, new FieldMetaData("uuid", org.apache.thrift.TFieldRequirementType.REQUIRED,
+                new FieldValueMetaData(TType.UUID)));
+            metaDataMap = java.util.Collections.unmodifiableMap(fields);
+            FieldMetaData.addStructMetaDataMap(TestTypesStruct.class, metaDataMap);
+        }
+
+        private int id;
+        private Color color;
+        private byte[] data;
+        private UUID uuid;
+        private boolean issetId;
+
+        public TestTypesStruct() { }
+
+        public TestTypesStruct(int id, Color color, byte[] data, UUID uuid) {
+            setId(id);
+            setColor(color);
+            setData(data);
+            setUuid(uuid);
+        }
+
+        @Override
+        public TestTypesStruct deepCopy() {
+            return new TestTypesStruct(id, color, data, uuid);
+        }
+
+        @Override
+        public void clear() {
+            id = 0;
+            color = null;
+            data = null;
+            uuid = null;
+            issetId = false;
+        }
+
+        @Override
+        public _Fields fieldForId(int fieldId) {
+            return _Fields.findByThriftId(fieldId);
+        }
+
+        @Override
+        public boolean isSet(_Fields field) {
+            if (field == null) return false;
+            switch (field) {
+                case ID: return issetId;
+                case COLOR: return color != null;
+                case DATA: return data != null;
+                case UUID: return uuid != null;
+                default: return false;
+            }
+        }
+
+        @Override
+        public Object getFieldValue(_Fields field) {
+            switch (field) {
+                case ID: return id;
+                case COLOR: return color;
+                case DATA: return getData();
+                case UUID: return uuid;
+                default: return null;
+            }
+        }
+
+        @Override
+        public void setFieldValue(_Fields field, Object value) {
+            switch (field) {
+                case ID:
+                    if (value == null) { id = 0; issetId = false; } else setId((Integer) value);
+                    break;
+                case COLOR: setColor((Color) value); break;
+                case DATA: setData((byte[]) value); break;
+                case UUID: setUuid((UUID) value); break;
+                default: break;
+            }
+        }
+
+        public int getId() { return id; }
+        public void setId(int id) { this.id = id; this.issetId = true; }
+
+        public Color getColor() { return color; }
+        public void setColor(Color color) { this.color = color; }
+
+        public byte[] getData() { return data == null ? null : data.clone(); }
+        public void setData(byte[] data) { this.data = data == null ? null : data.clone(); }
+
+        public UUID getUuid() { return uuid; }
+        public void setUuid(UUID uuid) { this.uuid = uuid; }
+
+        @Override
+        public void read(TProtocol protocol) throws TException {
+            clear();
+            protocol.readStructBegin();
+            while (true) {
+                TField field = protocol.readFieldBegin();
+                if (field.type == TType.STOP) break;
+                switch (field.id) {
+                    case 1:
+                        if (field.type == TType.I32) setId(protocol.readI32());
+                        else TProtocolUtil.skip(protocol, field.type);
+                        break;
+                    case 2:
+                        // Generated Thrift code writes enum fields with an I32 field descriptor;
+                        // TType.ENUM (-1) is metadata-only and never appears on the wire.
+                        if (field.type == TType.I32) setColor(Color.findByValue(protocol.readI32()));
+                        else TProtocolUtil.skip(protocol, field.type);
+                        break;
+                    case 3:
+                        if (field.type == TType.STRING) {
+                            ByteBuffer bytes = protocol.readBinary();
+                            byte[] value = new byte[bytes.remaining()];
+                            bytes.get(value);
+                            setData(value);
+                        } else TProtocolUtil.skip(protocol, field.type);
+                        break;
+                    case 4:
+                        if (field.type == TType.UUID) setUuid(protocol.readUuid());
+                        else TProtocolUtil.skip(protocol, field.type);
+                        break;
+                    default:
+                        TProtocolUtil.skip(protocol, field.type);
+                }
+                protocol.readFieldEnd();
+            }
+            protocol.readStructEnd();
+            if (!issetId || color == null || data == null || uuid == null) {
+                throw new TProtocolException(TProtocolException.INVALID_DATA, "Required TestTypesStruct field missing");
+            }
+        }
+
+        @Override
+        public void write(TProtocol protocol) throws TException {
+            protocol.writeStructBegin(new org.apache.thrift.protocol.TStruct("TestTypesStruct"));
+            if (isSet(_Fields.ID)) {
+                protocol.writeFieldBegin(new TField("id", TType.I32, (short) 1));
+                protocol.writeI32(id);
+                protocol.writeFieldEnd();
+            }
+            if (isSet(_Fields.COLOR)) {
+                protocol.writeFieldBegin(new TField("color", TType.I32, (short) 2));
+                protocol.writeI32(color.getValue());
+                protocol.writeFieldEnd();
+            }
+            if (isSet(_Fields.DATA)) {
+                protocol.writeFieldBegin(new TField("data", TType.STRING, (short) 3));
+                protocol.writeBinary(ByteBuffer.wrap(data));
+                protocol.writeFieldEnd();
+            }
+            if (isSet(_Fields.UUID)) {
+                protocol.writeFieldBegin(new TField("uuid", TType.UUID, (short) 4));
+                protocol.writeUuid(uuid);
+                protocol.writeFieldEnd();
+            }
+            protocol.writeFieldStop();
+            protocol.writeStructEnd();
+        }
+
+        @Override
+        public int compareTo(TestTypesStruct other) {
+            int idComparison = Integer.compare(id, other.id);
+            if (idComparison != 0) return idComparison;
+            int colorComparison = Integer.compare(color == null ? 0 : color.getValue(),
+                other.color == null ? 0 : other.color.getValue());
+            if (colorComparison != 0) return colorComparison;
+            int dataComparison = compareBytes(data, other.data);
+            if (dataComparison != 0) return dataComparison;
+            if (uuid == null) return other.uuid == null ? 0 : -1;
+            return other.uuid == null ? 1 : uuid.compareTo(other.uuid);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof TestTypesStruct)) return false;
+            TestTypesStruct that = (TestTypesStruct) other;
+            return id == that.id && issetId == that.issetId && color == that.color &&
+                Arrays.equals(data, that.data) && java.util.Objects.equals(uuid, that.uuid);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = java.util.Objects.hash(id, color, uuid, issetId);
+            return 31 * result + Arrays.hashCode(data);
+        }
+
+        @Override
+        public String toString() {
+            return "TestTypesStruct{id=" + id + ", color=" + color + ", data=" + Arrays.toString(data) +
+                ", uuid=" + uuid + "}";
+        }
+
+        private static int compareBytes(byte[] left, byte[] right) {
+            if (left == right) return 0;
+            if (left == null) return -1;
+            if (right == null) return 1;
+            int length = Math.min(left.length, right.length);
+            for (int i = 0; i < length; i++) {
+                int comparison = Integer.compare(left[i] & 0xff, right[i] & 0xff);
+                if (comparison != 0) return comparison;
+            }
+            return Integer.compare(left.length, right.length);
+        }
+    }
     
     /**
      * Creates a test Thrift struct with sample data.
@@ -643,6 +926,12 @@ return java.util.Objects.hash(value, description);
             properties,
             nested
         );
+    }
+
+    /** Creates a struct containing enum, binary, and UUID sample values. */
+    public static TestTypesStruct createTestTypesStruct() {
+        return new TestTypesStruct(7, Color.GREEN, "binary\u0000payload".getBytes(StandardCharsets.UTF_8),
+            UUID.fromString("123e4567-e89b-12d3-a456-426614174000"));
     }
     
     /**

@@ -94,6 +94,24 @@ class SDOToThriftTransformerTest {
         assertThat(result.getProperties()).hasSize(2);
         assertThat(result.getNested()).isNotNull();
     }
+
+    @Test
+    @DisplayName("Should map SDO enum integer, binary Base64, and UUID string to Thrift")
+    void shouldMapEnumBinaryAndUuidFromSDO() throws Exception {
+        org.eclipse.emf.ecore.sdo.EDataObject sdo = new ThriftToSDOTransformer(
+            new ThriftSDOConfiguration()).transformToSDO(TestDataGenerator.createTestTypesStruct());
+        sdo.eSet(sdo.eClass().getEStructuralFeature("color"), Integer.valueOf(2));
+        sdo.eSet(sdo.eClass().getEStructuralFeature("data"), "YmluYXJ5AHBheWxvYWQ=");
+        sdo.eSet(sdo.eClass().getEStructuralFeature("uuid"), "123e4567-e89b-12d3-a456-426614174000");
+
+        TestDataGenerator.TestTypesStruct result = transformer.transformToThrift(
+            sdo, TestDataGenerator.TestTypesStruct.class);
+
+        assertThat(result.getId()).isEqualTo(7);
+        assertThat(result.getColor()).isEqualTo(TestDataGenerator.Color.GREEN);
+        assertThat(result.getData()).containsExactly("binary\u0000payload".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(result.getUuid()).isEqualTo(java.util.UUID.fromString("123e4567-e89b-12d3-a456-426614174000"));
+    }
     
     @Test
     @DisplayName("Should handle null SDO transformation")

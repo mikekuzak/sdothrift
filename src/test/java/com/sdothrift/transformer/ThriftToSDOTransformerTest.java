@@ -114,6 +114,33 @@ class ThriftToSDOTransformerTest {
         assertThat(nested.eGet(nested.eClass().getEStructuralFeature("value"))).isEqualTo("nested_value");
         assertThat(nested.eGet(nested.eClass().getEStructuralFeature("description"))).isEqualTo("nested_description");
     }
+
+    @Test
+    @DisplayName("Should map enum, binary, and UUID Thrift values to SDO")
+    void shouldMapEnumBinaryAndUuidToSDO() throws Exception {
+        TestDataGenerator.TestTypesStruct thriftStruct = TestDataGenerator.createTestTypesStruct();
+        org.eclipse.emf.ecore.sdo.EDataObject result = transformer.transformToSDO(thriftStruct);
+
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("id"))).isEqualTo(7);
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("color"))).isEqualTo(2);
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("data"))).isEqualTo("YmluYXJ5AHBheWxvYWQ=");
+        assertThat(result.eGet(result.eClass().getEStructuralFeature("uuid")))
+            .isEqualTo("123e4567-e89b-12d3-a456-426614174000");
+    }
+
+    @Test
+    @DisplayName("Should preserve enum, binary, UUID, and id through a Thrift-SDO round trip")
+    void shouldRoundTripEnumBinaryAndUuidThroughSDO() throws Exception {
+        TestDataGenerator.TestTypesStruct source = TestDataGenerator.createTestTypesStruct();
+        org.eclipse.emf.ecore.sdo.EDataObject sdo = transformer.transformToSDO(source);
+        TestDataGenerator.TestTypesStruct result = new SDOToThriftTransformer(
+            new ThriftSDOConfiguration()).transformToThrift(sdo, TestDataGenerator.TestTypesStruct.class);
+
+        assertThat(result.getId()).isEqualTo(7);
+        assertThat(result.getColor()).isEqualTo(TestDataGenerator.Color.GREEN);
+        assertThat(result.getData()).containsExactly("binary\u0000payload".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThat(result.getUuid()).isEqualTo(java.util.UUID.fromString("123e4567-e89b-12d3-a456-426614174000"));
+    }
     
     @Test
     @DisplayName("Should handle null Thrift struct transformation")

@@ -1,12 +1,14 @@
 package com.sdothrift.transformer;
 
 import org.apache.thrift.TBase;
+import org.apache.thrift.TEnum;
 import org.apache.thrift.meta_data.FieldMetaData;
 import org.apache.thrift.protocol.TType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,6 +27,9 @@ public class TypeMapper {
     
     // Cache for class field information
     private static final Map<String, List<Field>> classFieldsCache = new ConcurrentHashMap<>();
+
+    // Cache for generated Thrift enum lookup methods
+    private static final Map<Class<?>, Method> enumFindByValueCache = new ConcurrentHashMap<>();
     
     /**
      * Thrift type to SDO type mapping for base types.
@@ -38,6 +43,8 @@ public class TypeMapper {
         THRIFT_TO_SDO_TYPES.put(TType.I64, Long.class);
         THRIFT_TO_SDO_TYPES.put(TType.DOUBLE, Double.class);
         THRIFT_TO_SDO_TYPES.put(TType.STRING, String.class);
+        THRIFT_TO_SDO_TYPES.put(TType.UUID, String.class);
+        THRIFT_TO_SDO_TYPES.put(TType.ENUM, Integer.class);
     }
     
     /**
@@ -66,6 +73,47 @@ public class TypeMapper {
             logger.debug("No direct mapping found for Thrift type: {}", thriftType);
         }
         return sdoType;
+    }
+
+    /**
+     * Returns the integer value represented by a Thrift enum instance.
+     *
+     * @param enumInstance the Thrift enum instance
+     * @return the enum's integer value
+     */
+    public static int enumValue(Object enumInstance) {
+        return ((TEnum) enumInstance).getValue();
+    }
+
+    /**
+     * Resolves a Thrift enum value using the generated enum's findByValue method.
+     *
+     * @param enumClass the generated Thrift enum class
+     * @param value the integer enum value
+     * @return the matching enum instance
+     * @throws IllegalArgumentException if the value has no matching enum constant
+     */
+    public static Object enumFromValue(Class<? extends TEnum> enumClass, int value) {
+        try {
+            Method findByValue = enumFindByValueCache.computeIfAbsent(enumClass, clazz -> {
+                try {
+                    return clazz.getMethod("findByValue", int.class);
+                } catch (NoSuchMethodException e) {
+                    throw new IllegalArgumentException("No findByValue(int) method for enum "
+                        + clazz.getName(), e);
+                }
+            });
+            Object enumValue = findByValue.invoke(null, value);
+            if (enumValue == null) {
+                throw new IllegalArgumentException("No enum constant " + enumClass.getName() + "." + value);
+            }
+            return enumValue;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to resolve enum value " + value
+                + " for " + enumClass.getName(), e);
+        }
     }
     
     /**
@@ -316,6 +364,7 @@ public class TypeMapper {
     public static void clearCaches() {
         fieldMetaDataCache.clear();
         classFieldsCache.clear();
+        enumFindByValueCache.clear();
     }
     
     /**

@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.exception.ThriftSDODataHandlerException;
 import org.apache.thrift.TBase;
+import org.apache.thrift.TEnum;
 import org.apache.thrift.TFieldIdEnum;
 import org.apache.thrift.TFieldRequirementType;
 import org.apache.thrift.meta_data.FieldMetaData;
@@ -37,11 +38,14 @@ import java.io.Reader;
 import java.lang.reflect.Field;
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Utility class for serializing and deserializing Thrift objects.
@@ -314,6 +318,17 @@ public class ThriftSerializer {
         if (value == null) {
             return objectMapper.getNodeFactory().nullNode();
         }
+        if (metadata instanceof EnumMetaData) {
+            if (!(value instanceof TEnum)) throw invalidShape(path, "Thrift enum");
+            return objectMapper.getNodeFactory().numberNode(((TEnum) value).getValue());
+        }
+        if (metadata.type == TType.STRING && metadata.isBinary()) {
+            return objectMapper.getNodeFactory().textNode(Base64.getEncoder().encodeToString(binaryBytes(value, path)));
+        }
+        if (metadata.type == TType.UUID) {
+            if (!(value instanceof UUID)) throw invalidShape(path, "UUID");
+            return objectMapper.getNodeFactory().textNode(value.toString());
+        }
         switch (metadata.type) {
             case TType.BOOL:
                 if (!(value instanceof Boolean)) throw invalidShape(path, "Boolean");
@@ -334,7 +349,7 @@ public class ThriftSerializer {
                 if (!(value instanceof Double)) throw invalidShape(path, "Double");
                 return objectMapper.getNodeFactory().numberNode((Double) value);
             case TType.STRING:
-                if (!(value instanceof String)) throw invalidShape(path, "String (binary fields are unsupported)");
+                if (!(value instanceof String)) throw invalidShape(path, "String");
                 return objectMapper.getNodeFactory().textNode((String) value);
             case TType.STRUCT:
                 if (!(metadata instanceof StructMetaData) || !(value instanceof TBase)) {
@@ -388,6 +403,33 @@ public class ThriftSerializer {
         if (node == null || node.isNull()) {
             return defaultOrNull(metadata, path);
         }
+        if (metadata instanceof EnumMetaData) {
+            int enumValue = integralValue(node, BigInteger.valueOf(Integer.MIN_VALUE),
+                    BigInteger.valueOf(Integer.MAX_VALUE), path).intValue();
+            Class<?> enumClass = ((EnumMetaData) metadata).enumClass;
+            Object converted = enumClass.getMethod("findByValue", Integer.TYPE).invoke(null, enumValue);
+            if (converted == null) {
+                throw new IllegalArgumentException("Unknown enum value " + enumValue + " for " + enumClass.getName() + " at " + path);
+            }
+            if (!(converted instanceof TEnum)) throw invalidShape(path, "Thrift enum");
+            return converted;
+        }
+        if (metadata.type == TType.STRING && metadata.isBinary()) {
+            if (!node.isTextual()) throw invalidJsonShape(path, "Base64 string");
+            try {
+                return Base64.getDecoder().decode(node.textValue());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid Base64 value at " + path, e);
+            }
+        }
+        if (metadata.type == TType.UUID) {
+            if (!node.isTextual()) throw invalidJsonShape(path, "UUID string");
+            try {
+                return UUID.fromString(node.textValue());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid UUID value at " + path, e);
+            }
+        }
         switch (metadata.type) {
             case TType.BOOL:
                 if (!node.isBoolean()) throw invalidJsonShape(path, "boolean");
@@ -408,7 +450,7 @@ public class ThriftSerializer {
                 }
                 return doubleValue;
             case TType.STRING:
-                if (!node.isTextual()) throw invalidJsonShape(path, "string (binary fields are unsupported)");
+                if (!node.isTextual()) throw invalidJsonShape(path, "string");
                 return node.textValue();
             case TType.STRUCT: {
                 if (!(metadata instanceof StructMetaData)) throw invalidJsonShape(path, "Thrift struct metadata");
@@ -588,12 +630,20 @@ public class ThriftSerializer {
     }
 
     private void rejectUnsupportedMetadata(FieldValueMetaData metadata, String path) {
-        if (metadata instanceof EnumMetaData) {
-            throw new IllegalArgumentException("Unsupported enum metadata at " + path);
+        // Enum and binary metadata are supported by the field-name JSON codec.
+    }
+
+    private byte[] binaryBytes(Object value, String path) {
+        if (value instanceof byte[]) {
+            return (byte[]) value;
         }
-        if (metadata.type == TType.STRING && metadata.isBinary()) {
-            throw new IllegalArgumentException("Unsupported binary metadata at " + path);
+        if (value instanceof ByteBuffer) {
+            ByteBuffer buffer = ((ByteBuffer) value).duplicate();
+            byte[] bytes = new byte[buffer.remaining()];
+            buffer.get(bytes);
+            return bytes;
         }
+        throw invalidShape(path, "binary byte[] or ByteBuffer");
     }
 
     @SuppressWarnings("unchecked")
