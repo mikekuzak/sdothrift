@@ -10,7 +10,7 @@ Apache Thrift reference: [github.com/apache/thrift](https://github.com/apache/th
 
 ## Scope
 
-The implementation supports bidirectional transformation for the primitive Thrift types, lists, sets, maps, and structs listed below. It does not support every Thrift type or every Thrift/SDO deployment scenario; see [Known limitations](#known-limitations).
+The implementation supports bidirectional transformation for the primitive Thrift types, enums, binary strings, UUIDs, lists, sets, maps, and structs listed below. It does not support every Thrift type or every Thrift/SDO deployment scenario; see [Known limitations](#known-limitations).
 
 The handler's textual JSON boundary uses ordinary JSON field names. Separately, the serializer byte API (`serializeToBytes` / `deserializeFromBytes`) uses the configured Thrift wire protocol: BINARY, COMPACT, or JSON. SIMPLE_JSON is write-only; attempting to read it fails explicitly.
 
@@ -34,13 +34,15 @@ For handler JSON-to-SDO conversion, a Thrift schema class must be supplied in `o
 | `i32` | `Integer` | `Integer` |
 | `i64` | `Long` | `Long` |
 | `double` | `Double` | `Double` |
-| `string` | `String` | `String`; binary strings are rejected |
+| `string` | `String` | `String` |
+| `binary` / `string` (binary annotation) | Base64 `String` | Base64-decodes to `byte[]` |
+| `uuid` | `String` | `UUID.fromString` |
 | `list<T>` | Many-valued SDO property (`java.util.List` semantics) | List; duplicates are preserved |
 | `set<T>` | Many-valued UNIQUE SDO property, represented as a list | `java.util.Set` |
 | `map<K,V>` | Containment list of entry DataObjects, each with `key` and `value` features | `java.util.Map`; non-string keys are rejected |
 | `struct` | Nested SDO `DataObject` | Nested struct |
-| `union` | Not specifically handled | No union-specific code exists |
-| `enum` | Unsupported | Explicitly rejected as unsupported metadata |
+| `union` | Nested SDO `DataObject` | Maps generically as a struct; no one-of validation |
+| `enum` | `Integer` (`TEnum.getValue()`) | Generated `findByValue(int)` |
 
 ## Configuration
 
@@ -78,7 +80,7 @@ Run the unit tests with:
 mvn clean test
 ```
 
-The verified offline run, `mvn -o clean test`, completed with **106 tests, 0 failures, 0 errors, 0 skipped**, and `BUILD SUCCESS`. The test suites are `ThriftSDODataHandlerTest` (27), `ThriftToSDOTransformerTest` (23), `SDOToThriftTransformerTest` (17), and `TypeMapperTest` (39). There are no integration tests or performance tests. Coverage has not been measured; a configured JaCoCo plugin is not evidence of a coverage percentage.
+The verified offline run, `mvn -o clean test`, completed with **116 tests, 0 failures, 0 errors**, and `BUILD SUCCESS`. The test suites are `ThriftSDODataHandlerTest`, `ThriftToSDOTransformerTest`, `SDOToThriftTransformerTest`, `TypeMapperTest`, and `ThriftSerializerTest`. There are no integration tests or performance tests. Coverage has not been measured; a configured JaCoCo plugin is not evidence of a coverage percentage.
 
 ## IBM Integration Designer / BAW deployment
 
@@ -107,6 +109,8 @@ src/main/java/com/sdothrift/
 
 src/test/java/com/sdothrift/
 ├── ThriftSDODataHandlerTest.java
+├── serializer/
+│   └── ThriftSerializerTest.java
 ├── transformer/
 │   ├── SDOToThriftTransformerTest.java
 │   ├── ThriftToSDOTransformerTest.java
@@ -119,7 +123,7 @@ src/test/java/com/sdothrift/
     └── SimpleTestRunner.java
 ```
 
-`BasicTestRunner`, `SimpleTestRunner`, and `TestFailureAnalyzer` are standalone main-method utilities, not JUnit tests. There is no test `serializer` or `integration` package.
+`BasicTestRunner`, `SimpleTestRunner`, and `TestFailureAnalyzer` are standalone main-method utilities, not JUnit tests. There is no integration-test package.
 
 ## Performance
 
@@ -131,7 +135,7 @@ Verification is unit-level only. The project has not been validated inside an IB
 
 ## Known limitations
 
-- Thrift unions, enums, and binary strings are unsupported (enums and binary strings are explicitly rejected; unions have no union-specific handling).
+- Thrift unions map generically as structs, with no one-of validation.
 - `collection.type.preferences`, `performance.caching.enabled`, `performance.cache.size`, and `debug.logging.enabled` are not yet wired into transformation behavior.
 - `jars/soacore_apis.jar` is system-scoped and is not packaged into the artifact. Deployment requires the IBM runtime to supply its IBM APIs.
 - No performance benchmark or coverage percentage is available.
