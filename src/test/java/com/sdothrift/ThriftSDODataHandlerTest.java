@@ -4,6 +4,7 @@ import com.sdothrift.config.ThriftSDOConfiguration;
 import com.sdothrift.util.TestDataGenerator;
 import com.sdothrift.util.TestSDOFixtures;
 import commonj.connector.runtime.DataHandlerException;
+import commonj.sdo.DataObject;
 import org.eclipse.emf.ecore.sdo.EDataObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -138,6 +139,24 @@ class ThriftSDODataHandlerTest {
             fail("Transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
     }
+
+    @Test
+    @DisplayName("Should transform Thrift object to commonj SDO DataObject")
+    void shouldTransformThriftObjectToCommonjDataObject() throws Exception {
+        TestDataGenerator.TestThriftStruct thriftStruct = TestDataGenerator.createTestThriftStruct();
+
+        Object result = dataHandler.transform(thriftStruct, DataObject.class, null);
+
+        assertThat(result).isNotNull().isInstanceOf(DataObject.class).isInstanceOf(EDataObject.class);
+        EDataObject sdo = (EDataObject) result;
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("active"))).isEqualTo(true);
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("score"))).isEqualTo(95.5);
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("tags")))
+            .asList().containsExactly("tag1", "tag2", "tag3");
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("properties"))).asList().hasSize(2);
+    }
     
     @Test
     @DisplayName("Should transform SDO object to Thrift")
@@ -157,6 +176,28 @@ class ThriftSDODataHandlerTest {
         } catch (DataHandlerException e) {
             fail("Transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
+    }
+
+    @Test
+    @DisplayName("Should transform commonj SDO DataObject to Thrift")
+    void shouldTransformCommonjDataObjectToThrift() throws Exception {
+        DataObject sdoObject = TestSDOFixtures.basic();
+
+        Object result = dataHandler.transform(sdoObject, TestDataGenerator.TestThriftStruct.class, null);
+
+        assertThat(result).isInstanceOf(TestDataGenerator.TestThriftStruct.class);
+        TestDataGenerator.TestThriftStruct thriftResult = (TestDataGenerator.TestThriftStruct) result;
+        assertThat(thriftResult.getId()).isEqualTo(123);
+        assertThat(thriftResult.getName()).isEqualTo("Test Structure");
+        assertThat(thriftResult.isActive()).isTrue();
+        assertThat(thriftResult.getScore()).isEqualTo(95.5);
+        assertThat(thriftResult.getTags()).containsExactly("tag1", "tag2", "tag3");
+        assertThat(thriftResult.getProperties())
+            .containsEntry("key1", "value1")
+            .containsEntry("key2", "value2");
+        assertThat(thriftResult.getNested()).isNotNull();
+        assertThat(thriftResult.getNested().getValue()).isEqualTo("nested_value");
+        assertThat(thriftResult.getNested().getDescription()).isEqualTo("nested_description");
     }
     
     @Test
@@ -211,6 +252,23 @@ class ThriftSDODataHandlerTest {
         } catch (DataHandlerException e) {
             fail("Thrift JSON to SDO transformation should not throw DataHandlerException: " + e.getMessage(), e);
         }
+    }
+
+    @Test
+    @DisplayName("Should transform Thrift JSON to commonj SDO DataObject")
+    void shouldTransformThriftJsonToCommonjDataObject() throws Exception {
+        Map<String, Object> bindingContext = new HashMap<>();
+        bindingContext.put("thrift.target.class", TestDataGenerator.TestThriftStruct.class);
+        dataHandler.setBindingContext(bindingContext);
+
+        Object result = dataHandler.transform(TestDataGenerator.createTestThriftJson(), DataObject.class, null);
+
+        assertThat(result).isNotNull().isInstanceOf(DataObject.class).isInstanceOf(EDataObject.class);
+        EDataObject sdo = (EDataObject) result;
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("id"))).isEqualTo(123);
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("name"))).isEqualTo("Test Structure");
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("active"))).isEqualTo(true);
+        assertThat(sdo.eGet(sdo.eClass().getEStructuralFeature("score"))).isEqualTo(95.5);
     }
     
     @Test

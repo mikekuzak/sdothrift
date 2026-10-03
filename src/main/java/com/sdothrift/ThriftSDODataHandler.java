@@ -5,6 +5,7 @@ import com.sdothrift.exception.ThriftSDODataHandlerException;
 import com.sdothrift.transformer.SDOToThriftTransformer;
 import com.sdothrift.transformer.ThriftToSDOTransformer;
 import com.sdothrift.serializer.ThriftSerializer;
+import commonj.sdo.DataObject;
 import org.apache.thrift.TBase;
 import org.apache.thrift.TFieldIdEnum;
 import org.apache.thrift.meta_data.FieldMetaData;
@@ -227,7 +228,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      */
     private Object preprocessInput(Object source, Class<?> targetClass) throws ThriftSDODataHandlerException {
         try {
-            if (source instanceof String || source instanceof TBase || source instanceof EDataObject) {
+            if (source instanceof String || source instanceof TBase || source instanceof DataObject) {
                 return source; // Already in suitable format
             } else if (source instanceof InputStream) {
                 return processInputStream((InputStream) source);
@@ -311,8 +312,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      */
     private boolean isThriftToSDOTransformation(Object source, Class<?> targetClass) {
         return (source instanceof TBase || isValidThriftJson(source)) && 
-               (targetClass == EDataObject.class || 
-                (targetClass != null && EDataObject.class.isAssignableFrom(targetClass)));
+               (targetClass != null && DataObject.class.isAssignableFrom(targetClass));
     }
 
     private boolean isStringToThriftTransformation(Object source, Class<?> targetClass) {
@@ -328,7 +328,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
      * @return true if SDO to Thrift transformation
      */
     private boolean isSDOToThriftTransformation(Object source, Class<?> targetClass) {
-        return (source instanceof EDataObject) && 
+        return (source instanceof DataObject) && 
                (targetClass != null && TBase.class.isAssignableFrom(targetClass));
     }
     
@@ -403,8 +403,16 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
         
         EDataObject sdoObject;
         
-        if (source instanceof EDataObject) {
-            sdoObject = (EDataObject) source;
+        if (source instanceof DataObject) {
+            if (source instanceof EDataObject) {
+                sdoObject = (EDataObject) source;
+            } else {
+                throw new ThriftSDODataHandlerException(
+                    ThriftSDODataHandlerException.ErrorCodes.UNSUPPORTED_OPERATION,
+                    "SDO source is not an EMF EDataObject",
+                    "The SDO transformer requires an EMF-backed EDataObject"
+                );
+            }
         } else if (source instanceof String) {
             // This would require SDO JSON deserialization
             // For now, throw an exception as this is complex
@@ -565,7 +573,7 @@ public class ThriftSDODataHandler implements commonj.connector.runtime.DataHandl
                 );
             }
         }
-        if (targetClass == EDataObject.class || EDataObject.class.isAssignableFrom(targetClass)) {
+        if (DataObject.class.isAssignableFrom(targetClass)) {
             Class<? extends TBase> thriftClass = determineThriftClassFromOptions(options);
             if (thriftClass == null) {
                 throw new ThriftSDODataHandlerException(
