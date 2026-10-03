@@ -2,6 +2,12 @@
 
 An IBM DataHandler implementation for transforming Apache Thrift objects (libthrift 0.21.0) and SDO DataObjects.
 
+## IBM reference
+
+This project implements a custom data handler for IBM Business Automation Workflow (BAW) and IBM Integration Designer, following the contract in [IBM's custom data handler documentation](https://www.ibm.com/docs/en/baw/26.0.x?topic=registries-creating-custom-data-handler). The handler implements `commonj.connector.runtime.DataHandler` (`transform`, `transformInto`, and `setBindingContext`) and is registered as `com.sdothrift.ThriftSDODataHandler`.
+
+Apache Thrift reference: [github.com/apache/thrift](https://github.com/apache/thrift).
+
 ## Scope
 
 The implementation supports bidirectional transformation for the primitive Thrift types, lists, sets, maps, and structs listed below. It does not support every Thrift type or every Thrift/SDO deployment scenario; see [Known limitations](#known-limitations).
